@@ -31,7 +31,15 @@ select,input[type=search],input[type=number]{padding:7px;border:1px solid var(--
 .prijs small{display:block;font-weight:400;color:var(--zacht);font-size:11px}
 .tekst{font-size:12px;color:var(--zacht);margin-top:5px}
 a.ook{font-size:12px;color:var(--accent)}
-@media(max-width:600px){.auto{grid-template-columns:90px 1fr}.foto{width:90px;height:70px}.prijs{grid-column:1/-1;text-align:left}}
+.auto{display:block;padding:0}
+.rij{display:grid;grid-template-columns:120px 1fr auto;gap:12px;padding:10px}
+.titel a{color:inherit;text-decoration:none}.titel a:hover{color:var(--accent);text-decoration:underline}
+.knop{background:none;border:0;border-top:1px solid var(--rand);width:100%;padding:7px;color:var(--accent);font:inherit;font-size:13px;cursor:pointer;border-radius:0 0 10px 10px}
+.det{border-top:1px solid var(--rand);padding:10px 12px;display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));font-size:13px}
+.det h4{margin:0 0 5px;font-size:13px}.det table{border-collapse:collapse;width:100%}.det td{padding:2px 0;vertical-align:top}.det td:first-child{color:var(--zacht);padding-right:10px;white-space:nowrap}
+.det ul{margin:0;padding-left:18px}
+.bod{background:var(--bg);border:1px solid var(--let);border-radius:6px;padding:5px 8px;font-size:12px;margin-top:6px}
+@media(max-width:600px){.rij{grid-template-columns:90px 1fr}.foto{width:90px;height:70px}.prijs{grid-column:1/-1;text-align:left}}
 </style>
 </head>
 <body>
@@ -47,9 +55,12 @@ a.ook{font-size:12px;color:var(--accent)}
     <label>Max. prijs (€)<input type="number" id="maxp" value="1000" step="100" min="0"></label>
     <label>APK minimaal nog geldig<select id="apkmin"><option value="">maakt niet uit</option><option value="0">niet verlopen</option><option value="3">≥ 3 maanden</option><option value="6">≥ 6 maanden</option><option value="12">≥ 12 maanden</option></select></label>
     <label>Max. km<input type="number" id="maxkm" placeholder="geen limiet" step="10000"></label>
-    <label>Sorteer<select id="sort"><option value="prijs">Prijs (laag → hoog)</option><option value="km">Kilometers (laag → hoog)</option><option value="jaar">Bouwjaar (nieuw → oud)</option><option value="nieuw">Nieuwst gevonden</option></select></label>
+    <label>Sorteer<select id="sort"><option value="prijs">Prijs (laag → hoog)</option><option value="km">Kilometers (laag → hoog)</option><option value="jaar">Bouwjaar (nieuw → oud)</option><option value="nieuw">Nieuwst gevonden</option><option value="apk">APK (langst geldig)</option><option value="bod">Hoogste bod (hoog → laag)</option></select></label>
     <div>
-      <label class="vink"><input type="checkbox" id="grijs"> toon ook vermoedelijk grijs kenteken (bestel)</label>
+      <label class="vink"><input type="checkbox" id="hook"> alleen met trekhaak</label>
+      <label class="vink"><input type="checkbox" id="metkt"> alleen met bekend kenteken (RDW-check)</label>
+      <label class="vink"><input type="checkbox" id="gel"> alleen geldige APK (RDW of advertentie)</label>
+      <label class="vink"><input type="checkbox" id="grijs"> toon ook grijs kenteken (bestel/bedrijfsauto)</label>
       <label class="vink"><input type="checkbox" id="exp"> toon export/Duits/Belgisch</label>
       <label class="vink"><input type="checkbox" id="twijfel"> toon onduidelijke prijs (€1, bieden)</label>
     </div>
@@ -67,44 +78,85 @@ function apkMaanden(apk){ // 'YYYY-MM' -> maanden vanaf nu (einde van die maand)
   return (j-nu.getFullYear())*12+(m-(nu.getMonth()+1));
 }
 function esc(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+const dt=s=>s?new Date(s).toLocaleDateString("nl-NL",{day:"numeric",month:"short",year:"numeric"}):"?";
+const dtt=s=>s?new Date(s).toLocaleString("nl-NL",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"?";
+function apkMnd(apk){ if(!apk) return null; return Math.floor((new Date(apk)-Date.now())/2629800000); }
+function tr(k,v){return v||v===0?`<tr><td>${k}</td><td>${esc(v)}</td></tr>`:""}
+function detail(a){
+  const r=a.rdw, ja=x=>x==="Ja"?"ja":x==="Nee"?"nee":x;
+  let rd='<p class="meta">Geen RDW-gegevens: kenteken niet in de advertentie gevonden. Vraag het kenteken aan de verkoper.</p>';
+  if(r){
+    rd=`<table>${tr("Kenteken",a.kenteken)}${tr("Soort",r.voertuigsoort+(r.inrichting?" ("+r.inrichting+")":""))}${tr("Merk/type",(r.merk+" "+r.type).trim())}
+    ${tr("APK vervalt",dt(r.apk))}${tr("Laatste APK-keuring",r.laatste_keuring?dt(r.laatste_keuring):"")}
+    ${tr("Verzekerd (WAM)",ja(r.verzekerd))}${tr("Op naam sinds",r.tenaam?dt(r.tenaam):"")}${tr("In Nederland sinds",r.nl_sinds?dt(r.nl_sinds):"")}
+    ${tr("Eerste toelating",r.eerste_toelating?dt(r.eerste_toelating):"")}${tr("Tellerstandoordeel (NAP)",r.tellerstand)}
+    ${tr("Wacht op keuren (WOK)",r.wok==="Ja"?"JA — let op!":r.wok&&!r.wok.startsWith("Geen verstrekking")?r.wok:"niet bekend in open data")}
+    ${tr("Overdracht mogelijk",ja(r.tenaamstellen))}${tr("Openstaande terugroepactie",ja(r.terugroep))}${tr("Export-indicator",ja(r.export))}${tr("Taxi geweest",ja(r.taxi))}</table>`;
+  }
+  let tech="";
+  if(r){tech=`<div><h4>Techniek</h4><table>${tr("Brandstof",r.brandstof)}${tr("Emissieklasse",r.euro)}${tr("Cilinderinhoud",r.cilinderinhoud?r.cilinderinhoud+" cc":"")}${tr("Zuinigheidsklasse",r.zuinigheid)}
+  ${tr("Zitplaatsen",r.zitplaatsen)}${tr("Massa rijklaar",r.massa_rijklaar?r.massa_rijklaar+" kg":"")}${tr("Trekgewicht geremd",r.trek_geremd?r.trek_geremd+" kg":"")}${tr("Trekgewicht ongeremd",r.trek_ongeremd?r.trek_ongeremd+" kg":"")}${tr("Kleur",r.kleur)}
+  ${tr("Trekhaak in advertentie",a.trekhaak?"ja":"niet genoemd")}</table></div>
+  <div><h4>Gebreken bij laatste APK ${r.laatste_keuring?"("+dt(r.laatste_keuring)+")":""}</h4>${r.gebreken&&r.gebreken.length?"<ul>"+r.gebreken.map(g=>"<li>"+esc(g)+"</li>").join("")+"</ul>":'<p class="meta">Geen gebreken gemeld bij de laatste keuring (of geen keuring bekend).</p>'}
+  <p class="meta">Het aantal eigenaren zit niet in de gratis RDW-gegevens (wel \u201cop naam sinds\u201d). Een betaald kentekenrapport (bijv. Finnik) toont dat wel.</p></div>`}
+  let bod="";
+  if(a.biedingen_aantal){
+    bod=`<div><h4>Biedingen (${a.biedingen_aantal})</h4>`+(a.hoogste_bod?`<table>${tr("Hoogste bod",euro(a.hoogste_bod.bedrag))}${tr("Geplaatst",dtt(a.hoogste_bod.datum))}${tr("Laatste bod",dtt(a.laatste_bod_datum))}</table>
+    <ul>${(a.biedingen||[]).map(b=>`<li>${euro(b.bedrag)} — ${dtt(b.datum)}</li>`).join("")}</ul>`:'<p class="meta">Geen geldige biedingen.</p>')+"</div>";
+  }
+  return `<div class="det"><div><h4>RDW-gegevens</h4>${rd}</div>${tech}${bod}</div>`;
+}
 function render(){
   const q=$("q").value.toLowerCase(), mo=$("model").value, br=$("bron").value, mp=+$("maxp").value||1e9,
-        am=$("apkmin").value, mk=+$("maxkm").value||1e9, so=$("sort").value;
-  let l=data.auto.filter(a=>
-    a.prijs<=mp && a.km<=mk && (!mo||a.model===mo) && (!br||a.bron===br||(a.ook_op||[]).some(o=>o.bron===br)) &&
+        am=$("apkmin").value, mk=+$("maxkm").value||1e9, so=$("sort").value, nu=Date.now();
+  let l=data.auto.filter(a=>{
+    const m=apkMnd(a.apk);
+    return a.prijs<=mp && a.km<=mk && (!mo||a.model===mo) && (!br||a.bron===br||(a.ook_op||[]).some(o=>o.bron===br)) &&
     ($("grijs").checked||!a.grijs) && ($("exp").checked||!a.export) && ($("twijfel").checked||!a.prijs_twijfel) &&
-    (!q||(a.titel+" "+a.tekst+" "+a.plaats).toLowerCase().includes(q)) &&
-    (am===""||(apkMaanden(a.apk)!==null&&apkMaanden(a.apk)>=+am)));
-  const nu=Date.now();
-  l.sort((a,b)=>so==="prijs"?a.prijs-b.prijs:so==="km"?a.km-b.km:so==="jaar"?b.jaar-a.jaar:(b.eerst_gezien>a.eerst_gezien?1:-1));
+    (!$("hook").checked||a.trekhaak) && (!$("metkt").checked||a.rdw) && (!$("gel").checked||(m!==null&&m>=0)) &&
+    (!q||(a.titel+" "+a.tekst+" "+a.plaats+" "+(a.kenteken||"")).toLowerCase().includes(q)) &&
+    (am===""||(m!==null&&m>=+am));});
+  l.sort((a,b)=>so==="prijs"?a.prijs-b.prijs:so==="km"?a.km-b.km:so==="jaar"?b.jaar-a.jaar:so==="apk"?(b.apk||"").localeCompare(a.apk||""):so==="bod"?((b.hoogste_bod||{}).bedrag||0)-((a.hoogste_bod||{}).bedrag||0):(b.eerst_gezien>a.eerst_gezien?1:-1));
   $("tel").textContent=l.length+" auto's gevonden";
   $("lijst").innerHTML=l.map(a=>{
-    const am=apkMaanden(a.apk), badges=[];
-    const dagen=(nu-new Date(a.eerst_gezien))/864e5;
+    const m=apkMnd(a.apk), badges=[], dagen=(nu-new Date(a.eerst_gezien))/864e5;
     if(dagen<=2) badges.push('<span class="b nw">nieuw</span>');
-    if(a.apk) badges.push(`<span class="b ${am<0?"slecht":am<4?"let":"goed"}">APK ${a.apk}${am<0?" (verlopen)":""}</span>`);
-    else badges.push('<span class="b">APK onbekend</span>');
-    if(a.grijs) badges.push('<span class="b slecht">grijs kenteken?</span>');
+    if(a.apk) badges.push(`<span class="b ${m<0?"slecht":m<4?"let":"goed"}">APK ${dt(a.apk)}${m<0?" (verlopen)":""}${a.apk_bron==="RDW"?" ✓":""}</span>`);
+    else badges.push('<span class="b let">APK onbekend (vaak verlopen)</span>');
+    if(a.trekhaak) badges.push('<span class="b goed">trekhaak</span>');
+    if(a.rdw){ badges.push(`<span class="b goed">${esc(a.kenteken)}</span>`);
+      if(a.rdw.verzekerd==="Nee") badges.push('<span class="b">niet verzekerd</span>');
+      if(a.rdw.wok==="Ja") badges.push('<span class="b slecht">WOK</span>');
+      if(a.rdw.terugroep==="Ja") badges.push('<span class="b let">terugroepactie</span>');
+      if(a.rdw.tellerstand==="Onlogisch") badges.push('<span class="b slecht">km onlogisch</span>');
+      if(a.rdw.gebreken&&a.rdw.gebreken.length) badges.push(`<span class="b let">${a.rdw.gebreken.length} gebreken laatste APK</span>`);
+    } else badges.push('<span class="b">kenteken onbekend</span>');
+    if(a.grijs) badges.push(`<span class="b slecht">${a.rdw?"grijs kenteken (RDW)":"grijs kenteken?"}</span>`);
     if(a.export) badges.push('<span class="b slecht">export/buitenlands</span>');
     if(a.marge) badges.push('<span class="b let">marge</span>');
     if(a.prijs_twijfel) badges.push('<span class="b let">prijs onduidelijk</span>');
     if(a.vorige_prijs) badges.push(`<span class="b goed">prijs was ${euro(a.vorige_prijs)}</span>`);
     if(a.type_verkoper) badges.push(`<span class="b">${a.type_verkoper}</span>`);
-    const ook=(a.ook_op||[]).map(o=>`<a class="ook" href="${esc(o.url)}" target="_blank" rel="noopener">ook op ${esc(o.bron)}</a>`).join(" · ");
-    return `<a class="auto" href="${esc(a.url)}" target="_blank" rel="noopener">
+    const ook=(a.ook_op||[]).map(o=>`<a class="ook" href="${esc(o.url)}" target="_blank" rel="noopener">ook op ${esc(o.bron)}${o.prijs!==a.prijs?" ("+euro(o.prijs)+")":""}</a>`).join(" · ");
+    const bod=a.hoogste_bod?`<div class="bod">🔨 Hoogste bod <b>${euro(a.hoogste_bod.bedrag)}</b> · geplaatst ${dtt(a.hoogste_bod.datum)} · ${a.biedingen_aantal} bieding${a.biedingen_aantal==1?"":"en"}</div>`:(a.biedingen_actief?'<div class="bod">🔨 Biedingen mogelijk — nog geen bod</div>':"");
+    return `<div class="auto"><div class="rij">
       <img class="foto" loading="lazy" src="${esc(a.foto)}" alt="" onerror="this.style.visibility='hidden'">
-      <div><div class="titel">${esc(a.titel)}</div>
-        <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.brandstof)} · ${esc(a.plaats)} · ${esc(a.bron)}</div>
-        <div class="badges">${badges.join("")}</div>
-        ${a.tekst?`<div class="tekst">${esc(a.tekst)}</div>`:""}
-        ${ook?`<div class="tekst">${ook}</div>`:""}</div>
-      <div class="prijs">${a.prijs<100?"?":euro(a.prijs)}<small>${esc(a.prijstype)}</small></div></a>`}).join("")||'<p class="meta">Niets gevonden met deze filters.</p>';
+      <div><div class="titel"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.titel)}</a></div>
+        <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.rdw&&a.rdw.brandstof||a.brandstof)} · ${esc(a.plaats)} · ${esc(a.bron)}</div>
+        <div class="badges">${badges.join("")}</div>${bod}
+        ${a.tekst?`<div class="tekst">${esc(a.tekst)}</div>`:""}${ook?`<div class="tekst">${ook}</div>`:""}</div>
+      <div class="prijs">${a.prijs<100?"?":euro(a.prijs)}<small>${esc(a.prijstype)}</small></div></div>
+      <button class="knop" data-i="${esc(a.id)}">Details: RDW, APK-gebreken${a.biedingen_aantal?", biedingen":""} ▾</button></div>`}).join("")||'<p class="meta">Niets gevonden met deze filters.</p>';
+  document.querySelectorAll(".knop").forEach(b=>b.onclick=()=>{
+    const open=b.nextElementSibling&&b.nextElementSibling.classList.contains("det");
+    if(open){b.nextElementSibling.remove();b.textContent=b.textContent.replace("▴","▾");return;}
+    b.insertAdjacentHTML("afterend",detail(data.auto.find(x=>x.id===b.dataset.i)));b.textContent=b.textContent.replace("▾","▴");});
 }
 fetch("data.json?"+Date.now()).then(r=>r.json()).then(d=>{
   data=d;
   [...new Set(d.auto.map(a=>a.model))].sort().forEach(m=>$("model").add(new Option(m,m)));
   const t=new Date(d.bijgewerkt);
-  $("status").textContent="Laatst bijgewerkt: "+t.toLocaleString("nl-NL",{dateStyle:"medium",timeStyle:"short"})+" · "+Object.entries(d.bronnen).map(([k,v])=>k+": "+v).join(" · ")+" · wordt elk uur ververst";
+  $("status").textContent="Laatst bijgewerkt: "+t.toLocaleString("nl-NL",{dateStyle:"medium",timeStyle:"short"})+" · "+Object.entries(d.bronnen).map(([k,v])=>k+": "+v).join(" · ")+" · RDW-check: "+(d.rdw_gevonden||0)+" van "+d.auto.length+" auto's · ververst elk uur";
   document.querySelectorAll("input,select").forEach(e=>e.addEventListener("input",render));
   render();
 }).catch(e=>{$("status").textContent="Kon data.json niet laden: "+e});
