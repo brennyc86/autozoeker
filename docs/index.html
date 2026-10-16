@@ -60,8 +60,9 @@ a.ook{font-size:12px;color:var(--accent)}
     <label>Bron<select id="bron"><option value="">Alle sites</option><option>Marktplaats</option><option>AutoScout24</option></select></label>
     <label>Max. prijs (€)<input type="number" id="maxp" value="1000" step="100" min="0"></label>
     <label>APK minimaal nog geldig<select id="apkmin"><option value="">maakt niet uit</option><option value="0">niet verlopen</option><option value="3">≥ 3 maanden</option><option value="6">≥ 6 maanden</option><option value="9">≥ 9 maanden</option><option value="10">≥ 10 maanden</option><option value="11">≥ 11 maanden</option><option value="12">≥ 12 maanden</option></select></label>
+    <label>Max. afstand vanaf <span id="thuisnaam">thuis</span> (km, hemelsbreed)<input type="number" id="maxafst" placeholder="geen limiet" step="25"></label>
     <label>Max. km<input type="number" id="maxkm" placeholder="geen limiet" step="10000"></label>
-    <label>Sorteer<select id="sort"><option value="prijs">Prijs (laag → hoog)</option><option value="km">Kilometers (laag → hoog)</option><option value="jaar">Bouwjaar (nieuw → oud)</option><option value="nieuw">Nieuwst gevonden</option><option value="apk">APK (langst geldig)</option><option value="bod">Hoogste bod (hoog → laag)</option></select></label>
+    <label>Sorteer<select id="sort"><option value="prijs">Prijs (laag → hoog)</option><option value="km">Kilometers (laag → hoog)</option><option value="jaar">Bouwjaar (nieuw → oud)</option><option value="nieuw">Nieuwst gevonden</option><option value="afstand">Afstand (dichtbij → ver)</option><option value="apk">APK (langst geldig)</option><option value="bod">Hoogste bod (hoog → laag)</option></select></label>
     <div>
       <label class="vink"><input type="checkbox" id="liked"> 👍 alleen gelikete auto's</label>
       <label class="vink"><input type="checkbox" id="disl"> 👎 toon ook gedislikete</label>
@@ -108,7 +109,7 @@ function zet(a,v){
 }
 
 // ---- instellingen (filters) onthouden + overdrachtslink
-const INST=["q","model","bron","maxp","apkmin","maxkm","sort"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel"];
+const INST=["q","model","bron","maxp","apkmin","maxkm","maxafst","sort"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel"];
 function bewaarInst(){try{const o={};INST.forEach(i=>o[i]=$(i).value);VINK.forEach(i=>o[i]=$(i).checked);localStorage.setItem("instellingen",JSON.stringify(o))}catch(e){}}
 function laadInst(o){if(!o)return;INST.forEach(i=>{if(o[i]!==undefined)$(i).value=o[i]});VINK.forEach(i=>{if(o[i]!==undefined)$(i).checked=o[i]})}
 const u64=s=>btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
@@ -203,7 +204,7 @@ function detail(a){
 }
 function render(){
   const q=$("q").value.toLowerCase(), mo=$("model").value, br=$("bron").value, mp=+$("maxp").value||1e9,
-        am=$("apkmin").value, mk=+$("maxkm").value||1e9, so=$("sort").value, nu=Date.now();
+        am=$("apkmin").value, ma=+$("maxafst").value||1e9, mk=+$("maxkm").value||1e9, so=$("sort").value, nu=Date.now();
   let l=data.auto.filter(a=>{
     const m=apkMnd(a.apk), sv=stem(a), likedModus=$("liked").checked;
     if(likedModus && sv!=="like") return false;
@@ -212,9 +213,9 @@ function render(){
     if(likedModus) return true;                       // gelikete auto's: alle overige filters negeren
     if(sv==="dislike" && !$("disl").checked) return false;
     if(a.online===false && !$("offl").checked) return false;
-    return a.prijs<=mp && a.km<=mk && ($("grijs").checked||!a.grijs) && ($("exp").checked||!a.export) && ($("twijfel").checked||!a.prijs_twijfel) &&
+    return a.prijs<=mp && a.km<=mk && (ma>=1e9||(a.afstand_km!==undefined&&a.afstand_km<=ma)) && ($("grijs").checked||!a.grijs) && ($("exp").checked||!a.export) && ($("twijfel").checked||!a.prijs_twijfel) &&
       (!$("hook").checked||a.trekhaak) && (!$("metkt").checked||a.rdw) && (!$("gel").checked||(m!==null&&m>=0)) && (am===""||(m!==null&&m>=+am));});
-  l.sort((a,b)=>so==="prijs"?a.prijs-b.prijs:so==="km"?a.km-b.km:so==="jaar"?b.jaar-a.jaar:so==="apk"?(b.apk||"").localeCompare(a.apk||""):so==="bod"?((b.hoogste_bod||{}).bedrag||0)-((a.hoogste_bod||{}).bedrag||0):(b.eerst_gezien>a.eerst_gezien?1:-1));
+  l.sort((a,b)=>so==="prijs"?a.prijs-b.prijs:so==="km"?a.km-b.km:so==="afstand"?(a.afstand_km??9e9)-(b.afstand_km??9e9):so==="jaar"?b.jaar-a.jaar:so==="apk"?(b.apk||"").localeCompare(a.apk||""):so==="bod"?((b.hoogste_bod||{}).bedrag||0)-((a.hoogste_bod||{}).bedrag||0):(b.eerst_gezien>a.eerst_gezien?1:-1));
   $("tel").textContent=l.length+" auto's gevonden";
   $("lijst").innerHTML=l.map(a=>{
     const m=apkMnd(a.apk), badges=[], dagen=(nu-new Date(a.eerst_gezien))/864e5;
@@ -242,7 +243,7 @@ function render(){
     return `<div class="auto ${sv==="dislike"?"dis":""} ${sv==="like"?"lk":""} ${a.online===false?"off":""}"><div class="rij">
       <img class="foto" loading="lazy" src="${esc(a.foto)}" alt="" onerror="this.style.visibility='hidden'">
       <div><div class="titel"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.titel)}</a></div>
-        <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.rdw&&a.rdw.brandstof||a.brandstof)} · ${esc(a.plaats)} · ${esc(a.bron)}</div>
+        <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.rdw&&a.rdw.brandstof||a.brandstof)} · ${esc(a.plaats)}${a.afstand_km!==undefined?" ("+a.afstand_km+" km)":""} · ${esc(a.bron)}</div>
         <div class="badges">${badges.join("")}</div>${bod}
         <div class="stem"><button class="${sv==="like"?"on":""}" data-v="like" data-k="${esc(a.id)}">👍</button><button class="${sv==="dislike"?"on":""}" data-v="dislike" data-k="${esc(a.id)}">👎</button>${vr.r?`<span class="reden">“${esc(vr.r)}”</span>`:""}</div>
         ${a.tekst?`<div class="tekst">${esc(a.tekst)}</div>`:""}${ook?`<div class="tekst">${ook}</div>`:""}</div>
@@ -256,7 +257,7 @@ function render(){
     b.insertAdjacentHTML("afterend",detail(data.auto.find(x=>x.id===b.dataset.i)));b.textContent=b.textContent.replace("▾","▴");});
 }
 fetch("data.json?"+Date.now()).then(r=>r.json()).then(d=>{
-  data=d;
+  data=d; $("thuisnaam").textContent=d.thuis||"thuis";
   [...new Set(d.auto.map(a=>a.model))].sort().forEach(m=>$("model").add(new Option(m,m)));
   const t=new Date(d.bijgewerkt);
   $("status").textContent="Laatst bijgewerkt: "+t.toLocaleString("nl-NL",{dateStyle:"medium",timeStyle:"short"})+" · "+Object.entries(d.bronnen).map(([k,v])=>k+": "+v).join(" · ")+" · RDW-check: "+(d.rdw_gevonden||0)+" van "+d.auto.length+" auto's · ververst elk uur";

@@ -1,13 +1,74 @@
 {
   "max_prijs": 1500,
   "modellen": [
-    {"naam": "Citroën Berlingo", "mp": "berlingo", "as": ["citroen", "berlingo"]},
-    {"naam": "Peugeot Partner", "mp": "peugeot partner", "as": ["peugeot", "partner"]},
-    {"naam": "Renault Kangoo", "mp": "kangoo", "as": ["renault", "kangoo"]},
-    {"naam": "Fiat Doblò", "mp": "doblo", "as": ["fiat", "doblo"]},
-    {"naam": "Opel Combo", "mp": "opel combo", "as": ["opel", "combo"]},
-    {"naam": "VW Caddy", "mp": "caddy", "as": ["volkswagen", "caddy"]},
-    {"naam": "Citroën Nemo", "mp": "citroen nemo", "as": ["citroen", "nemo"]},
-    {"naam": "Ford Tourneo Connect", "mp": "tourneo connect", "as": ["ford", "tourneo-connect"]}
-  ]
+    {
+      "naam": "Citroën Berlingo",
+      "mp": "berlingo",
+      "as": [
+        "citroen",
+        "berlingo"
+      ]
+    },
+    {
+      "naam": "Peugeot Partner",
+      "mp": "peugeot partner",
+      "as": [
+        "peugeot",
+        "partner"
+      ]
+    },
+    {
+      "naam": "Renault Kangoo",
+      "mp": "kangoo",
+      "as": [
+        "renault",
+        "kangoo"
+      ]
+    },
+    {
+      "naam": "Fiat Doblò",
+      "mp": "doblo",
+      "as": [
+        "fiat",
+        "doblo"
+      ]
+    },
+    {
+      "naam": "Opel Combo",
+      "mp": "opel combo",
+      "as": [
+        "opel",
+        "combo"
+      ]
+    },
+    {
+      "naam": "VW Caddy",
+      "mp": "caddy",
+      "as": [
+        "volkswagen",
+        "caddy"
+      ]
+    },
+    {
+      "naam": "Citroën Nemo",
+      "mp": "citroen nemo",
+      "as": [
+        "citroen",
+        "nemo"
+      ]
+    },
+    {
+      "naam": "Ford Tourneo Connect",
+      "mp": "tourneo connect",
+      "as": [
+        "ford",
+        "tourneo-connect"
+      ]
+    }
+  ],
+  "thuis": {
+    "naam": "Naarden",
+    "lat": 52.30307,
+    "lon": 5.16193
+  }
 }

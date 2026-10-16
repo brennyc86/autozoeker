@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Zoekt hoge personen-MPV's (Berlingo, Partner, Kangoo ...) op Marktplaats en AutoScout24,
 haalt per kenteken de RDW-gegevens op en schrijft docs/data.json. Alleen standaardbibliotheek."""
-import json, re, time, urllib.request, urllib.error, urllib.parse, datetime, pathlib, sys
+import json, math, re, time, urllib.request, urllib.error, urllib.parse, datetime, pathlib, sys
 
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
       "Accept-Language": "nl-NL,nl;q=0.9"}
@@ -106,6 +106,7 @@ def marktplaats(model):
                               "SEE_DESCRIPTION": "zie omschrijving"}.get(pt, pt.lower()),
                 "jaar": int(jaar), "km": int(km), "brandstof": attr(l, "fuel"), "apk": apk_uit_tekst(tekst), "apk_bron": "tekst" if apk_uit_tekst(tekst) else "",
                 "kenteken": schoon_kenteken(kt.group(1)) if kt else "", "trekhaak": heeft_trekhaak(opties + " " + tekst),
+                "lat": l["location"].get("latitude"), "lon": l["location"].get("longitude"),
                 "plaats": l["location"].get("cityName", ""), "verkoper": l.get("sellerInformation", {}).get("sellerName", ""),
                 "type_verkoper": "", "grijs": grijs_kenteken(tekst, url, titel), "marge": "marge" in tekst.lower(),
                 "export": bool(EXPORT_RE.search(tekst)), "geplaatst": l.get("date", ""),
@@ -184,6 +185,7 @@ def autoscout(model):
                 "prijs_twijfel": l["price"]["priceRaw"] < 100, "prijstype": "vast",
                 "jaar": int(jr.group(1)) if jr else 0, "km": int(km or 0), "brandstof": v.get("fuel", ""),
                 "apk": "", "apk_bron": "", "kenteken": "", "trekhaak": False,
+                "postcode": (l["location"].get("zip") or "").upper().replace(" ", ""),
                 "plaats": l["location"].get("city", "").title(), "verkoper": "",
                 "type_verkoper": "handelaar" if l["seller"]["type"] == "Dealer" else "particulier",
                 "grijs": bool(TITEL_VAN.search(v.get("modelVersionInput") or "")), "marge": False, "export": False,
@@ -301,6 +303,54 @@ def pas_rdw_toe(a, r):
     a["export"] = a["export"] or r["export"] == "Ja"
 
 
+# ---------------------------------------------------------------- afstand
+GEO_PAD = ROOT / "docs" / "geocache.json"
+
+
+def geocode(zoek, cache):
+    """Postcode of plaatsnaam -> [lat, lon] via PDOK (gratis, geen sleutel). Resultaat wordt gecachet."""
+    if zoek in cache:
+        return cache[zoek]
+    is_pc = re.fullmatch(r"\d{4}[A-Z]{2}", zoek)
+    q = urllib.parse.urlencode({"q": ("postcode:" + zoek) if is_pc else zoek, "fl": "centroide_ll", "rows": 1,
+                                "fq": "type:postcode" if is_pc else "type:woonplaats"})
+    t = haal("https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?" + q, tries=2)
+    try:
+        m = re.search(r"POINT\(([\d.]+) ([\d.]+)\)", t)
+        cache[zoek] = [float(m.group(2)), float(m.group(1))] if m else None
+    except Exception:
+        cache[zoek] = None
+    return cache[zoek]
+
+
+def hemelsbreed(a, b):
+    p1, p2 = math.radians(a[0]), math.radians(b[0])
+    dl = math.radians(b[1] - a[1])
+    x = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(x))
+
+
+def bereken_afstanden(lijst):
+    thuis = CFG.get("thuis")
+    if not thuis:
+        return
+    try:
+        cache = json.load(open(GEO_PAD))
+    except Exception:
+        cache = {}
+    for a in lijst:
+        punt = None
+        if a.get("lat") and a.get("lon"):
+            punt = [a["lat"], a["lon"]]
+        elif a.get("postcode"):
+            punt = geocode(a["postcode"], cache)
+        if not punt and a.get("plaats"):
+            punt = geocode(a["plaats"], cache)
+        if punt:
+            a["afstand_km"] = round(hemelsbreed([thuis["lat"], thuis["lon"]], punt))
+    GEO_PAD.write_text(json.dumps(cache, separators=(",", ":")), encoding="utf-8")
+
+
 # ---------------------------------------------------------------- historie
 def nu_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes")
@@ -357,6 +407,7 @@ def main():
     lijst = list(alle.values())
     for a in lijst:                     # serieel en rustig: Marktplaats blokkeert snelle verzoeken
         mp_detail(a, oud) if a["bron"] == "Marktplaats" else as_detail(a, oud)
+    bereken_afstanden(lijst)
     kentekens = {a["kenteken"] for a in lijst if a.get("kenteken")}
     rdw = rdw_ophalen(kentekens) if kentekens else {}
     for a in lijst:
@@ -409,7 +460,7 @@ def main():
             if ouder > BEWAAR_DAGEN:
                 continue
         uniek[("oud", oid)] = o
-    uit = {"bijgewerkt": nu, "max_prijs": MAX, "bronnen": bronstatus, "rdw_gevonden": len(rdw), "kentekens": len(kentekens),
+    uit = {"bijgewerkt": nu, "max_prijs": MAX, "thuis": CFG.get("thuis", {}).get("naam", ""), "bronnen": bronstatus, "rdw_gevonden": len(rdw), "kentekens": len(kentekens),
            "auto": sorted(uniek.values(), key=lambda a: a["prijs"])}
     pad.write_text(json.dumps(uit, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{sum(a.get('online', True) for a in uit['auto'])} online, {sum(not a.get('online', True) for a in uit['auto'])} offline, bronnen: {bronstatus}, kentekens: {len(kentekens)}, RDW: {len(rdw)}")
