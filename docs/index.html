@@ -74,7 +74,10 @@ a.ook{font-size:12px;color:var(--accent)}
       <label class="vink"><input type="checkbox" id="twijfel"> toon onduidelijke prijs (€1, bieden)</label>
     </div>
   </div>
-  <details class="sync"><summary>Synchronisatie tussen apparaten (optioneel)</summary>
+  <details class="sync"><summary>Bewaren &amp; overzetten naar een ander apparaat</summary>
+    <p class="meta">Likes, dislikes en je filters worden automatisch in deze browser bewaard. Chrome-sync neemt dit niet mee. Klik hieronder om een link te kopiëren: open die op je andere apparaat en alles wordt overgenomen.</p>
+    <button id="linkknop">📋 Kopieer overdrachtslink</button> <span class="meta" id="linkst"></span>
+    <p class="meta" style="margin-top:10px"><b>Optioneel:</b> automatisch synchroniseren via GitHub.</p>
     <p class="meta">Likes en dislikes staan standaard alleen in deze browser. Plak hier een GitHub-token (fine-grained, alleen deze repo, <i>Contents: read/write</i>) om ze ook in de repo op te slaan. Dan onthoudt de zoeker gelikete auto's ook als ze lang offline zijn en zie je ze op al je apparaten.</p>
     <input type="password" id="tok" placeholder="github_pat_…"> <button id="toksave">Opslaan &amp; synchroniseren</button> <span class="meta" id="syncst"></span></details>
   <div id="overzicht"></div>
@@ -102,6 +105,20 @@ function zet(a,v){
   else{const r=prompt((v==="like"?"👍 Waarom vind je deze auto goed?":"👎 Waarom afgewezen?")+" (optioneel, leeg laten mag)", (votes[k]&&votes[k].r)||"");
     if(r===null) return; votes[k]={v,r:r.trim(),d:new Date().toISOString(),t:a.titel};}
   bewaarVotes(); render();
+}
+
+// ---- instellingen (filters) onthouden + overdrachtslink
+const INST=["q","model","bron","maxp","apkmin","maxkm","sort"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel"];
+function bewaarInst(){try{const o={};INST.forEach(i=>o[i]=$(i).value);VINK.forEach(i=>o[i]=$(i).checked);localStorage.setItem("instellingen",JSON.stringify(o))}catch(e){}}
+function laadInst(o){if(!o)return;INST.forEach(i=>{if(o[i]!==undefined)$(i).value=o[i]});VINK.forEach(i=>{if(o[i]!==undefined)$(i).checked=o[i]})}
+const u64=s=>btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const u64d=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0)));
+function maakLink(){const o={};INST.forEach(i=>o[i]=$(i).value);VINK.forEach(i=>o[i]=$(i).checked);
+  return location.origin+location.pathname+"#s="+u64(JSON.stringify({votes,inst:o}))}
+function importeerHash(){
+  const m=location.hash.match(/^#s=(.+)$/); if(!m) return false;
+  try{const d=JSON.parse(u64d(m[1]));merge(d.votes||{});laadInst(d.inst);
+    localStorage.setItem("votes",JSON.stringify(votes));bewaarInst();history.replaceState(null,"",location.pathname);return true}catch(e){return false}
 }
 // ---- optionele synchronisatie via GitHub API (likes.json in de repo)
 const REPO="brennyc86/autozoeker", LP="docs/likes.json";
@@ -243,7 +260,11 @@ fetch("data.json?"+Date.now()).then(r=>r.json()).then(d=>{
   [...new Set(d.auto.map(a=>a.model))].sort().forEach(m=>$("model").add(new Option(m,m)));
   const t=new Date(d.bijgewerkt);
   $("status").textContent="Laatst bijgewerkt: "+t.toLocaleString("nl-NL",{dateStyle:"medium",timeStyle:"short"})+" · "+Object.entries(d.bronnen).map(([k,v])=>k+": "+v).join(" · ")+" · RDW-check: "+(d.rdw_gevonden||0)+" van "+d.auto.length+" auto's · ververst elk uur";
-  document.querySelectorAll("input,select").forEach(e=>e.addEventListener("input",render));
+  let ingelezen=importeerHash();
+  try{laadInst(JSON.parse(localStorage.getItem("instellingen")||"null"))}catch(e){}
+  document.querySelectorAll("input,select").forEach(e=>{ if(e.id!=="tok") e.addEventListener("input",()=>{bewaarInst();render()}) });
+  $("linkknop").onclick=async()=>{const l=maakLink();try{await navigator.clipboard.writeText(l);$("linkst").textContent="✓ gekopieerd — open deze link op je andere apparaat"}catch(e){prompt("Kopieer deze link:",l)}};
+  if(ingelezen) $("status").textContent="✓ likes en instellingen overgenomen van je andere apparaat. "+$("status").textContent;
   $("tok").value=tok()?"•••••••• (opgeslagen)":"";
   $("toksave").onclick=()=>{const v=$("tok").value.trim();if(v&&!v.startsWith("•")){try{localStorage.setItem("ghtoken",v)}catch(e){}}syncNu()};
   fetch("likes.json?"+Date.now()).then(r=>r.ok?r.json():{}).then(r=>{if(merge(r)){try{localStorage.setItem("votes",JSON.stringify(votes))}catch(e){}render()}}).catch(()=>{});
