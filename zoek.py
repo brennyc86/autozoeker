@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Zoekt hoge personen-MPV's (Berlingo, Partner, Kangoo ...) op Marktplaats en AutoScout24,
 haalt per kenteken de RDW-gegevens op en schrijft docs/data.json. Alleen standaardbibliotheek."""
-import json, re, time, urllib.request, urllib.parse, datetime, pathlib, sys
+import json, re, time, urllib.request, urllib.error, urllib.parse, datetime, pathlib, sys
 
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
       "Accept-Language": "nl-NL,nl;q=0.9"}
@@ -155,7 +155,7 @@ def mp_detail(a, oud):
             top = max(bieden, key=lambda b: (b["bedrag"], b["datum"]))
             a["hoogste_bod"] = top
             a["laatste_bod_datum"] = max(b["datum"] for b in bieden)
-            a["biedingen"] = sorted(bieden, key=lambda b: b["datum"], reverse=True)[:10]
+            a["biedingen"] = sorted(bieden, key=lambda b: b["datum"], reverse=True)[:40]
             if a["prijs"] < 100:           # vraagprijs ontbreekt: toon het hoogste bod als prijs
                 a["prijs"], a["prijstype"], a["prijs_twijfel"] = top["bedrag"], "hoogste bod", False
 
@@ -301,7 +301,38 @@ def pas_rdw_toe(a, r):
     a["export"] = a["export"] or r["export"] == "Ja"
 
 
-# ---------------------------------------------------------------- hoofdprogramma
+# ---------------------------------------------------------------- historie
+def nu_iso():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes")
+
+
+def probe(a):
+    """Staat de advertentie nog online? 'online' / 'weg' / '?' (onbekend, bijv. geblokkeerd)."""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(a["url"], headers=UA), timeout=25) as r:
+            body = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return "weg" if e.code in (404, 410) else "?"
+    except Exception:
+        return "?"
+    return "online" if a["id"].split("-", 1)[1] in body else "weg"
+
+
+def likes_laden():
+    try:
+        v = json.load(open(ROOT / "docs" / "likes.json"))
+        return {k for k, x in v.items() if x.get("v") == "like"}
+    except Exception:
+        return set()
+
+
+def sleutel(a):
+    return a.get("kenteken") or a["id"]
+
+
+BEWAAR_DAGEN = 30        # niet-gelikete offline auto's bewaren we zo lang
+
+
 def main():
     pad = ROOT / "docs" / "data.json"
     oud = {}
@@ -310,6 +341,8 @@ def main():
             oud = {a["id"]: a for a in json.load(open(pad))["auto"]}
         except Exception:
             pass
+    nu = nu_iso()
+    likes = likes_laden()
     alle, bronstatus = {}, {}
     for model in CFG["modellen"]:
         for naam, fn in (("Marktplaats", marktplaats), ("AutoScout24", autoscout)):
@@ -330,8 +363,17 @@ def main():
         if a.get("kenteken") in rdw:
             pas_rdw_toe(a, rdw[a["kenteken"]])
         o = oud.get(a["id"])
-        a["eerst_gezien"] = o["eerst_gezien"] if o else datetime.date.today().isoformat()
-        a["vorige_prijs"] = o["prijs"] if o and o["prijs"] != a["prijs"] and o.get("prijstype") == a["prijstype"] else None
+        a["online"], a["gemist"], a["laatst_gezien"], a["offline_sinds"] = True, 0, nu, None
+        a["eerst_gezien"] = o["eerst_gezien"] if o else nu
+        a["gebeurtenissen"] = list(o.get("gebeurtenissen") or [{"d": o["eerst_gezien"], "t": "online"}]) if o else [{"d": nu, "t": "online"}]
+        if o and not o.get("online", True):
+            a["gebeurtenissen"].append({"d": nu, "t": "weer online"})
+        ph = list(o.get("prijshistorie", [])) if o else []
+        if not ph and o:
+            ph = [{"d": o["eerst_gezien"], "p": o["prijs"], "t": o.get("prijstype", "")}]
+        if not ph or ph[-1]["p"] != a["prijs"] or ph[-1]["t"] != a["prijstype"]:
+            ph.append({"d": nu, "p": a["prijs"], "t": a["prijstype"]})
+        a["prijshistorie"] = ph
     # Dezelfde auto op meerdere sites (zelfde kenteken of model/jaar/km/prijs): één regel met extra link
     uniek = {}
     for a in sorted(lijst, key=lambda a: a["bron"] != "Marktplaats"):
@@ -343,11 +385,34 @@ def main():
             uniek[sl]["trekhaak"] = uniek[sl]["trekhaak"] or a["trekhaak"]
         else:
             uniek[sl] = a
-    uit = {"bijgewerkt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes"),
-           "max_prijs": MAX, "bronnen": bronstatus, "rdw_gevonden": len(rdw), "kentekens": len(kentekens),
+    # Auto's van een eerdere run die nu niet meer in de zoekresultaten staan
+    for oid, o in oud.items():
+        if oid in alle:
+            continue
+        o = dict(o)
+        if o.get("online", True):
+            if bronstatus.get(o["bron"], 0) == 0:       # bron faalde: niets concluderen
+                uniek[("oud", oid)] = o
+                continue
+            o["gemist"] = o.get("gemist", 0) + 1
+            if o["gemist"] >= 2:
+                st = probe(o)
+                if st == "weg":
+                    o["online"], o["offline_sinds"] = False, nu
+                    o["gebeurtenissen"] = o.get("gebeurtenissen", []) + [{"d": nu, "t": "offline"}]
+                elif st == "online":
+                    o["gemist"] = 0               # nog online (bijv. prijs boven zoekgrens)
+        elif not o.get("offline_sinds"):
+            o["offline_sinds"] = nu
+        if not o.get("online", True) and sleutel(o) not in likes and o["id"] not in likes:
+            ouder = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(o["offline_sinds"].replace("Z", "+00:00"))).days
+            if ouder > BEWAAR_DAGEN:
+                continue
+        uniek[("oud", oid)] = o
+    uit = {"bijgewerkt": nu, "max_prijs": MAX, "bronnen": bronstatus, "rdw_gevonden": len(rdw), "kentekens": len(kentekens),
            "auto": sorted(uniek.values(), key=lambda a: a["prijs"])}
-    pad.write_text(json.dumps(uit, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{len(uit['auto'])} auto's, bronnen: {bronstatus}, kentekens: {len(kentekens)}, RDW: {len(rdw)}")
+    pad.write_text(json.dumps(uit, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"{sum(a.get('online', True) for a in uit['auto'])} online, {sum(not a.get('online', True) for a in uit['auto'])} offline, bronnen: {bronstatus}, kentekens: {len(kentekens)}, RDW: {len(rdw)}")
 
 
 if __name__ == "__main__":
