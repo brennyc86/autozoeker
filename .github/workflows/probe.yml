@@ -1,0 +1,19 @@
+name: Sites testen
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bereikbaarheid vanaf GitHub
+        run: |
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
+          for u in \
+            "https://www.gaspedaal.nl/citroen/berlingo" \
+            "https://www.gaspedaal.nl/citroen/berlingo?pmax=1500" \
+            "https://www.autowereld.nl/citroen/berlingo/" \
+            "https://www.autowereld.nl/" \
+            "https://www.speurders.nl/auto-s/citroen/berlingo" \
+            "https://www.autotrack.nl/aanbod/merk/citroen/model/berlingo" \
+            "https://www.viabovag.nl/auto/merk-citroen/model-berlingo" ; do
+            curl -s -m 25 -L -A "$UA" -o /tmp/x.html -w "$u %{http_code} %{size_download}\n" "$u"
+          done
