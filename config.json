@@ -64,11 +64,27 @@
         "ford",
         "tourneo-connect"
       ]
+    },
+    {
+      "naam": "Nissan NV200 / e-NV200",
+      "mp": "nv200",
+      "as": [
+        "nissan",
+        "nv200"
+      ],
+      "as2": [
+        "nissan",
+        "e-nv200"
+      ]
     }
   ],
   "thuis": {
     "naam": "Naarden",
     "lat": 52.30307,
     "lon": 5.16193
-  }
+  },
+  "ruim_max": 10000,
+  "ruim_max_elektrisch": 25000,
+  "extra_per_model": 12,
+  "extra_elektrisch_per_model": 8
 }

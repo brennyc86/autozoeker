@@ -8,6 +8,35 @@ UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/1
 ROOT = pathlib.Path(__file__).parent
 CFG = json.load(open(ROOT / "config.json"))
 MAX = CFG["max_prijs"]
+# Ruimer zoeken zodat de pagina kan tonen hoe ver auto's buiten het budget zitten
+RUIM = CFG.get("ruim_max", 10000)
+RUIM_EL = CFG.get("ruim_max_elektrisch", 25000)
+EXTRA = CFG.get("extra_per_model", 12)
+EXTRA_EL = CFG.get("extra_elektrisch_per_model", 8)
+
+
+def elektrisch(brandstof):
+    b = (brandstof or "").lower()
+    return "elektr" in b and not any(x in b for x in ("benz", "diesel", "hybr"))
+
+
+class Extra:
+    """Telt per model hoeveel duurdere (buiten MAX) auto's al zijn meegenomen."""
+    def __init__(self):
+        self.n = self.el = 0
+
+    def toelaten(self, prijs, brandstof):
+        if prijs <= MAX:
+            return True
+        if elektrisch(brandstof):
+            if prijs <= RUIM_EL and self.el < EXTRA_EL:
+                self.el += 1
+                return True
+            return False
+        if prijs <= RUIM and self.n < EXTRA:
+            self.n += 1
+            return True
+        return False
 RDW = "https://opendata.rdw.nl/resource/"
 MAANDEN = {m: i + 1 for i, m in enumerate("jan feb mrt apr mei jun jul aug sep okt nov dec".split())}
 APK_RE = re.compile(r"apk[^0-9a-z]{0,12}(?:tot|t/m|geldig tot|t\.m\.?)?[^0-9a-z]{0,4}(\d{1,2})[-/. ](\d{1,2}|[a-z]{3,9})[-/. ](\d{2,4})", re.I)
@@ -72,11 +101,22 @@ def grijs_kenteken(tekst, url="", titel=""):
 
 # ---------------------------------------------------------------- Marktplaats
 def marktplaats(model):
-    uit, off = [], 0
+    """Gewone zoekronde (tot RUIM) plus een aparte ronde voor elektrisch (tot RUIM_EL)."""
+    res = {a["id"]: a for a in mp_zoek(model, False)}
+    time.sleep(0.7)
+    for a in mp_zoek(model, True):
+        res.setdefault(a["id"], a)
+    return list(res.values())
+
+
+def mp_zoek(model, elek):
+    uit, off, extra = [], 0, Extra()
     trefwoord = [w for w in model["mp"].split() if w not in ("citroen", "peugeot", "opel")]
     while off < 600:
         q = urllib.parse.urlencode({"query": model["mp"], "l1CategoryId": 91, "limit": 100, "offset": off,
                                     "sortBy": "PRICE", "sortOrder": "INCREASING"})
+        if elek:
+            q += "&attributesById[]=11756"          # brandstof = Elektrisch
         txt = haal("https://www.marktplaats.nl/lrp/api/search?" + q)
         if not txt:
             break
@@ -86,13 +126,15 @@ def marktplaats(model):
         for l in ls:
             p = l["priceInfo"].get("priceCents", 0) / 100
             pt = l["priceInfo"].get("priceType", "")
-            if p > MAX:
+            if p > (RUIM_EL if elek else RUIM):
                 continue
             titel = l["title"]
-            if not any(w in titel.lower() for w in trefwoord):
+            if not any(w in titel.lower() for w in trefwoord) or re.search(r"gevraagd|gezocht|inkoop|gezocht", titel.lower()):
                 continue
             jaar, km = attr(l, "constructionYear"), attr(l, "mileage")
             if not jaar or not km:      # geen auto maar onderdeel/aanbieding
+                continue
+            if not extra.toelaten(p, attr(l, "fuel")):
                 continue
             opties = " ".join(sum([a.get("values", []) for a in l.get("attributes", [])], []))
             tekst = titel + " " + l.get("description", "") + " " + l.get("categorySpecificDescription", "")
@@ -113,7 +155,7 @@ def marktplaats(model):
                 "foto": ("https:" + l["imageUrls"][0]) if l.get("imageUrls") else "",
                 "url": url, "tekst": re.sub(r"\s+", " ", l.get("description", ""))[:240],
             })
-        if ls[-1]["priceInfo"].get("priceCents", 0) / 100 > MAX:
+        if ls[-1]["priceInfo"].get("priceCents", 0) / 100 > (RUIM_EL if elek else RUIM):
             break
         off += 100
         time.sleep(0.7)
@@ -163,10 +205,24 @@ def mp_detail(a, oud):
 
 # ---------------------------------------------------------------- AutoScout24
 def autoscout(model):
+    """Per merk/model een gewone ronde (goedkoopste eerst) en een elektrische ronde; duurdere auto's beperkt via Extra."""
+    res = {}
+    for mk, md in [model["as"]] + ([model["as2"]] if model.get("as2") else []):
+        for elek in (False, True):
+            for a in as_zoek(model, mk, md, elek):
+                res.setdefault(a["id"], a)
+            time.sleep(0.7)
+    extra, uit = Extra(), []
+    for a in sorted(res.values(), key=lambda a: a["prijs"]):
+        if extra.toelaten(a["prijs"], a["brandstof"]):
+            uit.append(a)
+    return uit
+
+
+def as_zoek(model, mk, md, elek):
     uit = []
-    mk, md = model["as"]
     for pag in range(1, 8):
-        h = haal(f"https://www.autoscout24.nl/lst/{mk}/{md}?atype=C&cy=NL&priceto={MAX}&sort=price&desc=0&page={pag}")
+        h = haal(f"https://www.autoscout24.nl/lst/{mk}/{md}?atype=C&cy=NL&priceto={RUIM_EL if elek else RUIM}&sort=price&desc=0&page={pag}{'&fuel=E' if elek else ''}")
         m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', h, re.S)
         if not m:
             break
@@ -460,7 +516,7 @@ def main():
             if ouder > BEWAAR_DAGEN:
                 continue
         uniek[("oud", oid)] = o
-    uit = {"bijgewerkt": nu, "max_prijs": MAX, "thuis": CFG.get("thuis", {}).get("naam", ""), "bronnen": bronstatus, "rdw_gevonden": len(rdw), "kentekens": len(kentekens),
+    uit = {"bijgewerkt": nu, "max_prijs": MAX, "ruim_max": RUIM, "ruim_max_elektrisch": RUIM_EL, "thuis": CFG.get("thuis", {}).get("naam", ""), "bronnen": bronstatus, "rdw_gevonden": len(rdw), "kentekens": len(kentekens),
            "auto": sorted(uniek.values(), key=lambda a: a["prijs"])}
     pad.write_text(json.dumps(uit, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{sum(a.get('online', True) for a in uit['auto'])} online, {sum(not a.get('online', True) for a in uit['auto'])} offline, bronnen: {bronstatus}, kentekens: {len(kentekens)}, RDW: {len(rdw)}")
