@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Camper-auto zoeker</title>
 <style>
-:root{--bg:#f4f6f8;--kaart:#fff;--tekst:#1d2733;--zacht:#5d6b7a;--rand:#dde3ea;--accent:#0b6bcb;--goed:#1a7f37;--slecht:#c62828;--let:#b26a00}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1720;--kaart:#18222e;--tekst:#e7edf3;--zacht:#93a1b1;--rand:#2a3746;--accent:#5aa9ff;--goed:#4cc26b;--slecht:#ff7b72;--let:#e3a008}}
+:root{color-scheme:dark;--bg:#0f2419;--kaart:#17332a;--tekst:#efe6cf;--zacht:#a9b79f;--rand:#2f4e40;--accent:#d8c48e;--op-accent:#12261b;--goed:#86d494;--slecht:#f2907f;--let:#e8b84f;--ster:#e8c25a}
+a{color:var(--accent)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tekst);font:15px/1.4 system-ui,sans-serif}
 header{padding:16px;max-width:1100px;margin:auto}
@@ -26,7 +26,7 @@ select,input[type=search],input[type=number]{padding:7px;border:1px solid var(--
 .meta{color:var(--zacht);font-size:13px}
 .badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .b{font-size:11px;padding:2px 7px;border-radius:99px;border:1px solid var(--rand);white-space:nowrap}
-.b.goed{color:var(--goed);border-color:var(--goed)}.b.slecht{color:var(--slecht);border-color:var(--slecht)}.b.let{color:var(--let);border-color:var(--let)}.b.nw{background:var(--accent);color:#fff;border-color:var(--accent)}
+.b.goed{color:var(--goed);border-color:var(--goed)}.b.slecht{color:var(--slecht);border-color:var(--slecht)}.b.let{color:var(--let);border-color:var(--let)}.b.nw{background:var(--accent);color:var(--op-accent);border-color:var(--accent)}
 .prijs{text-align:right;font-weight:700;font-size:19px;white-space:nowrap}
 .prijs small{display:block;font-weight:400;color:var(--zacht);font-size:11px}
 .tekst{font-size:12px;color:var(--zacht);margin-top:5px}
@@ -42,7 +42,7 @@ a.ook{font-size:12px;color:var(--accent)}
 @media(max-width:600px){.rij{grid-template-columns:90px 1fr}.foto{width:90px;height:70px}.prijs{grid-column:1/-1;text-align:left}}
 .sync{background:var(--kaart);border:1px solid var(--rand);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px}.sync input{padding:6px;border:1px solid var(--rand);border-radius:6px;background:var(--bg);color:var(--tekst);width:min(320px,100%)}
 .stem{display:flex;gap:6px;align-items:center;margin-top:6px}.stem button{border:1px solid var(--rand);background:var(--bg);border-radius:99px;padding:3px 10px;cursor:pointer;font-size:14px;color:var(--tekst)}
-.stem button.on{border-color:var(--accent);background:var(--accent);color:#fff}.reden{font-size:12px;color:var(--zacht)}
+.stem button.on{border-color:var(--accent);background:var(--accent);color:var(--op-accent)}.reden{font-size:12px;color:var(--zacht)}
 .auto.dis{opacity:.55}.auto.lk{border-color:var(--goed)}.auto.off .foto{filter:grayscale(1)}
 .ov{overflow-x:auto;margin-bottom:12px;background:var(--kaart);border:1px solid var(--rand);border-radius:10px;padding:8px 12px}.ov table{border-collapse:collapse;width:100%;font-size:12px}.ov th,.ov td{text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid var(--rand);white-space:nowrap}
 .spark{vertical-align:middle}
@@ -50,6 +50,7 @@ a.ook{font-size:12px;color:var(--accent)}
 </head>
 <body>
 <header>
+  <a href="https://brennyc86.github.io/" style="color:var(--zacht);font-size:13px;text-decoration:none">← Start</a>
   <h1>🚐 Camper-auto zoeker</h1>
   <div class="sub" id="status">Laden…</div>
 </header>
