@@ -68,6 +68,7 @@ nav.tabs{display:flex;gap:6px;margin:10px 0}nav.tabs button{border:1px solid var
   <nav class="tabs"><button data-t="lijst" class="on">🚐 Auto's</button><button data-t="dash">📊 Dashboard (test)</button></nav>
   <div class="filters">
     <div class="brst" id="brst"></div>
+    <label>BTW / marge<select id="btwf"><option value="">alles</option><option value="geenexcl">niet: prijs excl. BTW</option><option value="marge">alleen marge-auto's</option><option value="btw">alleen BTW-auto's / excl. BTW</option><option value="particulier">alleen particulier-achtig (marge, incl. of onbekend)</option></select><span style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" id="btwbij" checked> 21% BTW erbij tellen bij "excl. BTW"</span></label>
     <label>Vul aan tot minstens<span style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aanvul" checked><input type="number" id="minaantal" value="10" min="1" max="100" style="width:80px"> auto's (ook duurdere)</span></label>
     <label>Zoek in tekst<input type="search" id="q" placeholder="bijv. airco, schuifdeur"></label>
     <label>Model<select id="model"><option value="">Alle modellen</option></select></label>
@@ -142,7 +143,7 @@ function brstCat(a){const t=((a.rdw&&a.rdw.brandstof)||a.brandstof||"").toLowerC
   const el=/elektr/.test(t),be=/benz/.test(t),di=/diesel/.test(t);
   if(/hybr/.test(t)||(el&&(be||di))) return "hybride"; if(el) return "elektrisch"; if(di) return "diesel"; if(be) return "benzine";
   if(/lpg/.test(t)) return "lpg"; if(/aardgas|cng/.test(t)) return "cng"; return "overig";}
-const INST=["q","model","bron","maxp","apkmin","maxkm","maxafst","sort","minaantal"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel","aanvul",...BRST.map(b=>"b_"+b[0])];
+const INST=["q","model","bron","maxp","apkmin","maxkm","maxafst","sort","minaantal","btwf"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel","aanvul","btwbij",...BRST.map(b=>"b_"+b[0])];
 $("brst").innerHTML=BRST.map(b=>`<label class="chip"><input type="checkbox" id="b_${b[0]}" checked><span style="color:${b[2]}">●</span> ${b[1]} <small id="n_${b[0]}"></small></label>`).join("");
 function bewaarInst(){try{const o={};INST.forEach(i=>o[i]=$(i).value);VINK.forEach(i=>o[i]=$(i).checked);localStorage.setItem("instellingen",JSON.stringify(o))}catch(e){}}
 function laadInst(o){if(!o)return;INST.forEach(i=>{if(o[i]!==undefined)$(i).value=o[i]});VINK.forEach(i=>{if(o[i]!==undefined)$(i).checked=o[i]})}
@@ -234,7 +235,9 @@ function detail(a){
     bod=`<div><h4>Biedingen (${a.biedingen_aantal})</h4>`+(a.hoogste_bod?`<table>${tr("Hoogste bod",euro(a.hoogste_bod.bedrag))}${tr("Geplaatst",dtt(a.hoogste_bod.datum))}${tr("Laatste bod",dtt(a.laatste_bod_datum))}</table>
     <ul>${(a.biedingen||[]).map(b=>`<li>${euro(b.bedrag)} — ${dtt(b.datum)}</li>`).join("")}</ul>`:'<p class="meta">Geen geldige biedingen.</p>')+"</div>";
   }
-  return `<div class="det">${historie(a)}<div><h4>RDW-gegevens</h4>${rd}</div>${tech}${bod}</div>`;
+  const btwTxt={marge:"Marge-auto: de BTW is niet aftrekbaar; de prijs is wat je betaalt.",excl:"Prijs is exclusief BTW: als particulier komt er 21% bij.",aftrekbaar:"BTW-auto: BTW is aftrekbaar voor ondernemers; als particulier betaal je de BTW gewoon mee.",incl:"Prijs is inclusief BTW."}[a.btw]||"Niet vermeld in de advertentie. Vraag het de verkoper (marge of BTW-auto).";
+  const btwdet=`<div><h4>BTW / marge</h4><table>${tr("Status",btwTxt)}${a._p0!==undefined&&a.btw==="excl"?tr("Vraagprijs excl. BTW",euro(a._p0))+tr("Incl. 21% BTW",euro(Math.round(a._p0*1.21))):""}</table></div>`;
+  return `<div class="det">${historie(a)}${btwdet}<div><h4>RDW-gegevens</h4>${rd}</div>${tech}${bod}</div>`;
 }
 let tab="lijst";
 const plaatsTs=a=>new Date(a.geplaatst_op||a.eerst_gezien||0).getTime();
@@ -244,12 +247,18 @@ function plekregel(a){
   const wanneer=a.geplaatst_op?`📅 Geplaatst <b>${dt(a.geplaatst_op)}</b> <span class="meta">(${leeftijd(a.geplaatst_op)})</span>`:`📅 Voor het eerst gezien <b>${dt(a.eerst_gezien)}</b> <span class="meta">(plaatsdatum onbekend${a.geplaatst?", lijst zegt: "+esc(a.geplaatst):""})</span>`;
   const waar=`📍 <b>${esc(a.plaats||"plaats onbekend")}</b> — ${a.afstand_km!==undefined?`<b>${a.afstand_km} km</b> van ${esc(thuis)}`:`afstand tot ${esc(thuis)} onbekend`}`;
   return `<div class="plek">${wanneer} &nbsp;·&nbsp; ${waar}</div>`}
+function zetPrijzen(){const bij=$("btwbij").checked;
+  data.auto.forEach(a=>{if(a._p0===undefined){a._p0=a.prijs;a._ph0=a.prijshistorie}
+    const f=a.btw==="excl"&&bij?1.21:1;a.prijs=Math.round(a._p0*f);a.prijshistorie=(a._ph0||[]).map(p=>({...p,p:Math.round(p.p*f)}))})}
+function btwOK(a){const f=$("btwf").value;if(!f)return true;
+  if(f==="geenexcl")return a.btw!=="excl";if(f==="marge")return a.btw==="marge"||(a.marge&&!a.btw);
+  if(f==="btw")return a.btw==="excl"||a.btw==="aftrekbaar";if(f==="particulier")return a.btw!=="excl"&&a.btw!=="aftrekbaar";return true}
 function basisOK(a,mp){ // alle filters behalve de prijs
   const q=$("q").value.toLowerCase(), mo=$("model").value, br=$("bron").value, am=$("apkmin").value, ma=+$("maxafst").value||1e9, mk=+$("maxkm").value||1e9;
   const m=apkMnd(a.apk), sv=stem(a);
   if(!(mo===""||a.model===mo) || !(br===""||a.bron===br||(a.ook_op||[]).some(o=>o.bron===br))) return false;
   if(q && !(a.titel+" "+a.tekst+" "+a.plaats+" "+(a.kenteken||"")).toLowerCase().includes(q)) return false;
-  if(!$("b_"+brstCat(a)).checked) return false;
+  if(!$("b_"+brstCat(a)).checked||!btwOK(a)) return false;
   if(sv==="dislike" && !$("disl").checked) return false;
   if(a.online===false && !$("offl").checked) return false;
   return a.km<=mk && (ma>=1e9||(a.afstand_km!==undefined&&a.afstand_km<=ma)) && ($("grijs").checked||!a.grijs) && ($("exp").checked||!a.export) && ($("twijfel").checked||!a.prijs_twijfel) &&
@@ -257,6 +266,7 @@ function basisOK(a,mp){ // alle filters behalve de prijs
 }
 function render(){
   const so=$("sort").value, nu=Date.now(), mp=+$("maxp").value||1e9;
+  zetPrijzen();
   BRST.forEach(b=>{const n=data.auto.filter(a=>a.online!==false&&brstCat(a)===b[0]).length;$("n_"+b[0]).textContent=n?"("+n+")":""});
   data.auto.forEach(a=>a._boven=0);
   if(tab==="dash"){dashboard(mp);return}
@@ -293,7 +303,10 @@ function render(){
     } else badges.push('<span class="b">kenteken onbekend</span>');
     if(a.grijs) badges.push(`<span class="b slecht">${a.rdw?"grijs kenteken (RDW)":"grijs kenteken?"}</span>`);
     if(a.export) badges.push('<span class="b slecht">export/buitenlands</span>');
-    if(a.marge) badges.push('<span class="b let">marge</span>');
+    if(a.btw==="marge"||(a.marge&&!a.btw)) badges.push('<span class="b let" title="Marge-auto: BTW niet aftrekbaar, de prijs is wat je betaalt">marge-auto</span>');
+    else if(a.btw==="excl") badges.push(`<span class="b slecht" title="Prijs is exclusief BTW; als particulier komt er 21% bij">prijs excl. BTW${$("btwbij").checked?" → "+euro(a.prijs)+" incl.":""}</span>`);
+    else if(a.btw==="aftrekbaar") badges.push('<span class="b let" title="BTW-auto: BTW aftrekbaar voor ondernemers">BTW-auto</span>');
+    else if(a.btw==="incl") badges.push('<span class="b goed">prijs incl. BTW</span>');
     if(a.online===false) badges.unshift(`<span class="b slecht">OFFLINE sinds ${dt(a.offline_sinds)} (${dagenTussen(a.eerst_gezien,a.offline_sinds)} d online)</span>`);
     const pv=prijsVerandering(a); if(pv&&pv.delta!==0) badges.push(`<span class="b ${pv.delta<0?"goed":"let"}">${pv.delta<0?"▼":"▲"} ${euro(Math.abs(pv.delta))} sinds ${dt(pv.laatst)} (was ${euro(pv.van)})</span>`);
     if(a.prijs_twijfel) badges.push('<span class="b let">prijs onduidelijk</span>');
@@ -308,7 +321,7 @@ function render(){
         ${plekregel(a)}<div class="badges">${badges.join("")}</div>${bod}
         <div class="stem"><button class="${sv==="like"?"on":""}" data-v="like" data-k="${esc(a.id)}">👍</button><button class="${sv==="dislike"?"on":""}" data-v="dislike" data-k="${esc(a.id)}">👎</button>${vr.r?`<span class="reden">“${esc(vr.r)}”</span>`:""}</div>
         ${a.tekst?`<div class="tekst">${esc(a.tekst)}</div>`:""}${ook?`<div class="tekst">${ook}</div>`:""}</div>
-      <div class="prijs ${a._boven>0?"boven":""}">${a.prijs<100?"?":euro(a.prijs)}<small>${esc(a.prijstype)}</small></div></div>
+      <div class="prijs ${a._boven>0?"boven":""}">${a.prijs<100?"?":euro(a.prijs)}<small>${esc(a.prijstype)}${a.btw==="excl"&&$("btwbij").checked?" · incl. BTW (€ "+a._p0.toLocaleString("nl-NL")+" excl.)":""}</small></div></div>
       <button class="knop" data-i="${esc(a.id)}">Details: looptijd &amp; prijsverloop, RDW, APK-gebreken${a.biedingen_aantal?", biedingen":""} ▾</button></div>`}).join("")||'<p class="meta">Niets gevonden met deze filters.</p>';
   overzicht(l);
   document.querySelectorAll(".stem button").forEach(b=>b.onclick=()=>zet(data.auto.find(x=>x.id===b.dataset.k),b.dataset.v));

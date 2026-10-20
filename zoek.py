@@ -13,6 +13,7 @@ RUIM = CFG.get("ruim_max", 10000)
 RUIM_EL = CFG.get("ruim_max_elektrisch", 25000)
 EXTRA = CFG.get("extra_per_model", 12)
 EXTRA_EL = CFG.get("extra_elektrisch_per_model", 8)
+CONTROLE_PER_RUN = 80
 
 
 def elektrisch(brandstof):
@@ -46,11 +47,23 @@ TITEL_VAN = re.compile(r"\b(cargo|express|maxi cargo|van|bestel\w*|l[12]h[12]|60
 EXPORT_RE = re.compile(r"export|duits kenteken|duitse kenteken|belgisch|belgische", re.I)
 
 
+WEG, GEHAALD = set(), set()      # urls die 404/410 gaven; urls die deze run succesvol zijn opgehaald
+
+
 def haal(url, tries=3):
     for i in range(tries):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=25) as r:
+                GEHAALD.add(url)
                 return r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                WEG.add(url)
+                return ""
+            if i == tries - 1:
+                print("FOUT", url[:90], e, file=sys.stderr)
+                return ""
+            time.sleep(10 if e.code in (403, 429) else 2)
         except Exception as e:
             if i == tries - 1:
                 print("FOUT", url[:90], e, file=sys.stderr)
@@ -91,6 +104,34 @@ def attr(l, key):
 def heeft_trekhaak(tekst):
     t = (tekst or "").lower()
     return "trekhaak" in t and not re.search(r"(geen|zonder) trekhaak", t)
+
+
+BTW_EXCL = re.compile(r"excl(?:usief|\.)?\s*(?:21\s*%\s*)?btw|\bex\.?\s*btw|prijs is exclusief|btw niet inbegrepen|\+\s*btw", re.I)
+BTW_AFTREK = re.compile(r"btw[- ]?auto|btw (?:aftrekbaar|verrekenbaar)|btw is aftrekbaar|aftrekbaar van de btw|zakelijk(?:e)? (?:rijder|aankoop)", re.I)
+BTW_INCL = re.compile(r"incl(?:usief|\.)?\s*(?:21\s*%\s*)?btw|btw inbegrepen", re.I)
+
+
+def btw_status(label, tekst):
+    """'marge' | 'excl' (prijs exclusief BTW) | 'aftrekbaar' (BTW-auto) | 'incl' | '' (onbekend)."""
+    l, t = (label or "").lower(), (tekst or "")
+    if l:
+        if "marge" in l:
+            return "marge"
+        if "exclusief" in l or "excl" in l:
+            return "excl"
+        if "aftrekbaar" in l or "verrekenbaar" in l:
+            return "aftrekbaar"
+        if "incl" in l:
+            return "incl"
+    if BTW_EXCL.search(t):
+        return "excl"
+    if re.search(r"\bmarge\b|margeauto|marge-auto", t, re.I):
+        return "marge"
+    if BTW_AFTREK.search(t):
+        return "aftrekbaar"
+    if BTW_INCL.search(t):
+        return "incl"
+    return ""
 
 
 def grijs_kenteken(tekst, url="", titel=""):
@@ -169,7 +210,9 @@ def mp_detail(a, oud):
         a["kenteken"] = o["kenteken"]
     if o.get("geplaatst_op"):
         a["geplaatst_op"] = o["geplaatst_op"]
-    if a.get("kenteken") and a.get("geplaatst_op") and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
+    if "btw" in o:
+        a["btw"] = o["btw"]
+    if a.get("kenteken") and a.get("geplaatst_op") and "btw" in a and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
         return
     time.sleep(0.6)
     h = haal(a["url"], tries=3)
@@ -180,6 +223,10 @@ def mp_detail(a, oud):
         if o.get("prijstype") == "hoogste bod" and a["prijs"] < 100:
             a["prijs"], a["prijstype"], a["prijs_twijfel"] = o["prijs"], "hoogste bod", False
         return
+    mb = re.search(r"<strong>BTW/Marge</strong>: ?([^<]+)", h)
+    a["btw"] = btw_status(mb.group(1) if mb else "", a.get("titel", "") + " " + a.get("tekst", ""))
+    if a["btw"] == "marge":
+        a["marge"] = True
     ms = re.search(r'"since":"(\d{4}-\d\d-\d\dT[^"]+)"', h)
     if ms:
         a["geplaatst_op"] = ms.group(1)       # eerste plaatsing (de lijstdatum verspringt bij opwaarderen)
@@ -262,8 +309,8 @@ def as_zoek(model, mk, md, elek):
 def as_detail(a, oud):
     """Detailpagina: omschrijving, carrosserietype, kenteken (verzekeringsoptie) en trekhaak."""
     o = oud.get(a["id"])
-    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op"):
-        for k in ("apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
+    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op") and "btw" in o:
+        for k in ("btw", "apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
             if k in o:
                 a[k] = o[k]
         a["verrijkt"] = True
@@ -284,6 +331,10 @@ def as_detail(a, oud):
         mm = re.search(r'"bodyType": ?\{"formatted": ?"([^"]+)"', s)
         bt = mm.group(1) if mm else ""
     a["carrosserie"] = bt
+    mv = re.search(r'"vatLabel": ?"([^"]*)"', m.group(1))
+    a["btw"] = btw_status(mv.group(1) if mv else "", desc + " " + a["titel"])
+    if not a["btw"] and re.search(r'"vatReportable": ?true', m.group(1)):
+        a["btw"] = "aftrekbaar"
     mg = re.search(r'"createdTimestampWithOffset": ?"([^"]+)"', s)
     if mg:
         a["geplaatst_op"] = mg.group(1)
@@ -292,7 +343,7 @@ def as_detail(a, oud):
     a["apk_bron"] = "tekst" if a["apk"] else ""
     a["trekhaak"] = bool(re.search(r'"id": ?"Trekhaak"', s)) or heeft_trekhaak(desc)
     a["tekst"] = re.sub(r"\s+", " ", desc)[:240]
-    a["marge"] = "marge" in desc.lower()
+    a["marge"] = "marge" in desc.lower() or a["btw"] == "marge"
     a["export"] = bool(EXPORT_RE.search(desc))
     a["grijs"] = bt.lower() in ("bestelwagen", "bedrijfswagen", "bestelbus") or grijs_kenteken(desc, "", a["titel"])
     a["verrijkt"] = True
@@ -471,6 +522,26 @@ def main():
     lijst = list(alle.values())
     for a in lijst:                     # serieel en rustig: Marktplaats blokkeert snelle verzoeken
         mp_detail(a, oud) if a["bron"] == "Marktplaats" else as_detail(a, oud)
+    # Verlopen advertenties eruit: 404/410 op de detailpagina, en per run een deel van de rest steekproefsgewijs controleren
+    nu_ = nu
+    kand = sorted([a for a in lijst if a["url"] not in GEHAALD and a["url"] not in WEG],
+                  key=lambda a: (oud.get(a["id"]) or {}).get("gecontroleerd", ""))[:CONTROLE_PER_RUN]
+    for a in kand:
+        time.sleep(0.5)
+        if probe(a) == "weg":
+            WEG.add(a["url"])
+        else:
+            a["gecontroleerd"] = nu_
+    for a in lijst:
+        if a["url"] in GEHAALD:
+            a["gecontroleerd"] = nu_
+        elif "gecontroleerd" not in a:
+            a["gecontroleerd"] = (oud.get(a["id"]) or {}).get("gecontroleerd", "")
+    for a in [a for a in lijst if a["url"] in WEG]:
+        alle.pop(a["id"], None)
+        if a["id"] in oud:
+            oud[a["id"]]["gemist"] = 2          # meteen als verlopen afhandelen
+    lijst = [a for a in lijst if a["url"] not in WEG]
     bereken_afstanden(lijst)
     kentekens = {a["kenteken"] for a in lijst if a.get("kenteken")}
     rdw = rdw_ophalen(kentekens) if kentekens else {}
