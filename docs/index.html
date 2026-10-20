@@ -71,6 +71,7 @@ nav.tabs{display:flex;gap:6px;margin:10px 0}nav.tabs button{border:1px solid var
   <nav class="tabs"><button data-t="lijst" class="on">🚐 Auto's</button><button data-t="dash">📊 Dashboard (test)</button></nav>
   <div class="filters">
     <div class="brst" id="brst"></div>
+    <label>Versnellingsbak<select id="vsf"><option value="">alles</option><option value="automaat">alleen automaat</option><option value="handgeschakeld">alleen handgeschakeld</option><option value="geenhand">automaat of onbekend</option></select></label>
     <label>BTW / marge<select id="btwf"><option value="">alles</option><option value="geenexcl">niet: prijs excl. BTW</option><option value="marge">alleen marge-auto's</option><option value="btw">alleen BTW-auto's / excl. BTW</option><option value="particulier">alleen particulier-achtig (marge, incl. of onbekend)</option></select><span style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" id="btwbij" checked> 21% BTW erbij tellen bij "excl. BTW"</span></label>
     <label>Vul aan tot minstens<span style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aanvul" checked><input type="number" id="minaantal" value="10" min="1" max="100" style="width:80px"> auto's (ook duurdere)</span></label>
     <label>Zoek in tekst<input type="search" id="q" placeholder="bijv. airco, schuifdeur"></label>
@@ -146,7 +147,7 @@ function brstCat(a){const t=((a.rdw&&a.rdw.brandstof)||a.brandstof||"").toLowerC
   const el=/elektr/.test(t),be=/benz/.test(t),di=/diesel/.test(t);
   if(/hybr/.test(t)||(el&&(be||di))) return "hybride"; if(el) return "elektrisch"; if(di) return "diesel"; if(be) return "benzine";
   if(/lpg/.test(t)) return "lpg"; if(/aardgas|cng/.test(t)) return "cng"; return "overig";}
-const INST=["q","model","bron","maxp","apkmin","maxkm","maxafst","sort","minaantal","btwf"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel","aanvul","btwbij",...BRST.map(b=>"b_"+b[0])];
+const INST=["q","model","bron","maxp","apkmin","maxkm","maxafst","sort","minaantal","btwf","vsf"], VINK=["liked","disl","offl","hook","metkt","gel","grijs","exp","twijfel","aanvul","btwbij",...BRST.map(b=>"b_"+b[0])];
 $("brst").innerHTML=BRST.map(b=>`<label class="chip"><input type="checkbox" id="b_${b[0]}" checked><span style="color:${b[2]}">●</span> ${b[1]} <small id="n_${b[0]}"></small></label>`).join("");
 function bewaarInst(){try{const o={};INST.forEach(i=>o[i]=$(i).value);VINK.forEach(i=>o[i]=$(i).checked);localStorage.setItem("instellingen",JSON.stringify(o))}catch(e){}}
 function laadInst(o){if(!o)return;INST.forEach(i=>{if(o[i]!==undefined)$(i).value=o[i]});VINK.forEach(i=>{if(o[i]!==undefined)$(i).checked=o[i]})}
@@ -244,6 +245,7 @@ function detail(a){
   let tech="";
   if(r){tech=`<div><h4>Techniek</h4><table>${tr("Brandstof",r.brandstof)}${tr("Emissieklasse",r.euro)}${tr("Cilinderinhoud",r.cilinderinhoud?r.cilinderinhoud+" cc":"")}${tr("Zuinigheidsklasse",r.zuinigheid)}
   ${tr("Zitplaatsen",r.zitplaatsen)}${tr("Massa rijklaar",r.massa_rijklaar?r.massa_rijklaar+" kg":"")}${tr("Trekgewicht geremd",r.trek_geremd?r.trek_geremd+" kg":"")}${tr("Trekgewicht ongeremd",r.trek_ongeremd?r.trek_ongeremd+" kg":"")}${tr("Kleur",r.kleur)}
+  ${tr("Versnellingsbak",a.versnelling==="automaat"?"automaat":a.versnelling==="handgeschakeld"?"handgeschakeld":"onbekend")}
   ${tr("Trekhaak in advertentie",a.trekhaak?"ja":"niet genoemd")}</table></div>
   <div><h4>Gebreken bij laatste APK ${r.laatste_keuring?"("+dt(r.laatste_keuring)+")":""}</h4>${r.gebreken&&r.gebreken.length?"<ul>"+r.gebreken.map(g=>"<li>"+esc(g)+"</li>").join("")+"</ul>":'<p class="meta">Geen gebreken gemeld bij de laatste keuring (of geen keuring bekend).</p>'}
   <p class="meta">Het aantal eigenaren zit niet in de gratis RDW-gegevens (wel \u201cop naam sinds\u201d). Een betaald kentekenrapport (bijv. Finnik) toont dat wel.</p></div>`}
@@ -270,12 +272,14 @@ function zetPrijzen(){const bij=$("btwbij").checked;
 function btwOK(a){const f=$("btwf").value;if(!f)return true;
   if(f==="geenexcl")return a.btw!=="excl";if(f==="marge")return a.btw==="marge"||(a.marge&&!a.btw);
   if(f==="btw")return a.btw==="excl"||a.btw==="aftrekbaar";if(f==="particulier")return a.btw!=="excl"&&a.btw!=="aftrekbaar";return true}
+function vsOK(a){const f=$("vsf").value;if(!f)return true;const v=a.versnelling||"";
+  if(f==="geenhand")return v!=="handgeschakeld";return v===f}
 function basisOK(a,mp){ // alle filters behalve de prijs
   const q=$("q").value.toLowerCase(), mo=$("model").value, br=$("bron").value, am=$("apkmin").value, ma=+$("maxafst").value||1e9, mk=+$("maxkm").value||1e9;
   const m=apkMnd(a.apk), sv=stem(a);
   if(!(mo===""||a.model===mo) || !(br===""||a.bron===br||(a.ook_op||[]).some(o=>o.bron===br))) return false;
   if(q && !(a.titel+" "+a.tekst+" "+a.plaats+" "+(a.kenteken||"")).toLowerCase().includes(q)) return false;
-  if(!$("b_"+brstCat(a)).checked||!btwOK(a)) return false;
+  if(!$("b_"+brstCat(a)).checked||!btwOK(a)||!vsOK(a)) return false;
   if(sv==="dislike" && !$("disl").checked) return false;
   if(a.online===false && !$("offl").checked) return false;
   return a.km<=mk && (ma>=1e9||(a.afstand_km!==undefined&&a.afstand_km<=ma)) && ($("grijs").checked||!a.grijs) && ($("exp").checked||!a.export) && ($("twijfel").checked||!a.prijs_twijfel) &&
@@ -310,6 +314,7 @@ function render(){
     if(a._boven>0) badges.unshift(`<span class="b let">+ ${euro(a._boven)} boven je maximum</span>`);
     if(a.apk) badges.push(`<span class="b ${m<0?"slecht":m<4?"let":"goed"}">APK ${dt(a.apk)}${m<0?" (verlopen)":""}${a.apk_bron==="RDW"?" ✓":""}</span>`);
     else badges.push('<span class="b let">APK onbekend (vaak verlopen)</span>');
+    if(a.versnelling) badges.push(`<span class="b ${a.versnelling==="automaat"?"goed":""}">${a.versnelling==="automaat"?"⚙ automaat":"handbak"}</span>`);
     if(a.trekhaak) badges.push('<span class="b goed">trekhaak</span>');
     if(a.rdw){ badges.push(`<span class="b goed">${esc(a.kenteken)}</span>`);
       if(a.rdw.verzekerd==="Nee") badges.push('<span class="b">niet verzekerd</span>');

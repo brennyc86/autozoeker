@@ -101,6 +101,16 @@ def attr(l, key):
     return ""
 
 
+def versnelling(s):
+    """Normaliseert tekst naar 'automaat', 'handgeschakeld' of ''."""
+    t = (s or "").lower()
+    if re.search(r"hand ?geschakeld|handbak|schakel ?bak|\bmanual|\bhandmatig", t):
+        return "handgeschakeld"
+    if re.search(r"automa|\bdsg\b|\btiptronic|\bcvt\b|\bpowershift|\bsemi-?auto|\bs[- ]?tronic|\beasytronic|\bamt\b|\bsequentiel", t):
+        return "automaat"
+    return ""
+
+
 def heeft_trekhaak(tekst):
     t = (tekst or "").lower()
     return "trekhaak" in t and not re.search(r"(geen|zonder) trekhaak", t)
@@ -187,7 +197,7 @@ def mp_zoek(model, elek):
                 "prijs_twijfel": p < 100 or pt in ("SEE_DESCRIPTION", "ON_REQUEST"),
                 "prijstype": {"FIXED": "vast", "MIN_BID": "bieden", "FREE": "gratis", "FAST_BID": "bieden",
                               "SEE_DESCRIPTION": "zie omschrijving"}.get(pt, pt.lower()),
-                "jaar": int(jaar), "km": int(km), "brandstof": attr(l, "fuel"), "apk": apk_uit_tekst(tekst), "apk_bron": "tekst" if apk_uit_tekst(tekst) else "",
+                "jaar": int(jaar), "km": int(km), "brandstof": attr(l, "fuel"), "versnelling": versnelling(attr(l, "transmission")), "apk": apk_uit_tekst(tekst), "apk_bron": "tekst" if apk_uit_tekst(tekst) else "",
                 "kenteken": schoon_kenteken(kt.group(1)) if kt else "", "trekhaak": heeft_trekhaak(opties + " " + tekst),
                 "lat": l["location"].get("latitude"), "lon": l["location"].get("longitude"),
                 "plaats": l["location"].get("cityName", ""), "verkoper": l.get("sellerInformation", {}).get("sellerName", ""),
@@ -213,7 +223,9 @@ def mp_detail(a, oud):
         a["geplaatst_op"] = o["geplaatst_op"]
     if "btw" in o:
         a["btw"] = o["btw"]
-    if a.get("kenteken") and a.get("geplaatst_op") and "btw" in a and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
+    if o.get("versnelling"):
+        a["versnelling"] = o["versnelling"]
+    if a.get("kenteken") and a.get("geplaatst_op") and "btw" in a and (a.get("versnelling") or o.get("vs_gezocht")) and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
         return
     time.sleep(0.6)
     h = haal(a["url"], tries=3)
@@ -224,6 +236,11 @@ def mp_detail(a, oud):
         if o.get("prijstype") == "hoogste bod" and a["prijs"] < 100:
             a["prijs"], a["prijstype"], a["prijs_twijfel"] = o["prijs"], "hoogste bod", False
         return
+    if not a.get("versnelling"):
+        mt = re.search(r'"key":"transmission","label":"[^"]*","value":"([^"]+)"', h) or re.search(r'"vehicleTransmission":"([^"]+)"', h) \
+            or re.search(r"Transmissie: <strong>([^<]+)</strong>", h)
+        a["versnelling"] = versnelling(mt.group(1) if mt else "") or versnelling(a.get("titel", "") + " " + a.get("tekst", ""))
+        a["vs_gezocht"] = True
     mb = re.search(r"<strong>BTW/Marge</strong>: ?([^<]+)", h)
     a["btw"] = btw_status(mb.group(1) if mb else "", a.get("titel", "") + " " + a.get("tekst", ""))
     if a["btw"] == "marge":
@@ -293,6 +310,7 @@ def as_zoek(model, mk, md, elek):
                 "prijs": l["price"]["priceRaw"], "vraagprijs": l["price"]["priceRaw"],
                 "prijs_twijfel": l["price"]["priceRaw"] < 100, "prijstype": "vast",
                 "jaar": int(jr.group(1)) if jr else 0, "km": int(km or 0), "brandstof": v.get("fuel", ""),
+                "versnelling": versnelling(v.get("transmission") or det.get("Transmissie", "")),
                 "apk": "", "apk_bron": "", "kenteken": "", "trekhaak": False,
                 "postcode": (l["location"].get("zip") or "").upper().replace(" ", ""),
                 "plaats": l["location"].get("city", "").title(), "verkoper": "",
@@ -310,8 +328,8 @@ def as_zoek(model, mk, md, elek):
 def as_detail(a, oud):
     """Detailpagina: omschrijving, carrosserietype, kenteken (verzekeringsoptie) en trekhaak."""
     o = oud.get(a["id"])
-    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op") and "btw" in o:
-        for k in ("btw", "apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
+    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op") and "btw" in o and "versnelling" in o:
+        for k in ("versnelling", "btw", "apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
             if k in o:
                 a[k] = o[k]
         a["verrijkt"] = True
@@ -332,6 +350,8 @@ def as_detail(a, oud):
         mm = re.search(r'"bodyType": ?\{"formatted": ?"([^"]+)"', s)
         bt = mm.group(1) if mm else ""
     a["carrosserie"] = bt
+    if not a.get("versnelling"):
+        a["versnelling"] = versnelling(str(veh.get("transmission") or "") + " " + desc + " " + a["titel"])
     mv = re.search(r'"vatLabel": ?"([^"]*)"', m.group(1))
     a["btw"] = btw_status(mv.group(1) if mv else "", desc + " " + a["titel"])
     if not a["btw"] and re.search(r'"vatReportable": ?true', m.group(1)):
