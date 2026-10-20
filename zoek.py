@@ -193,6 +193,7 @@ def mp_zoek(model, elek):
                 "plaats": l["location"].get("cityName", ""), "verkoper": l.get("sellerInformation", {}).get("sellerName", ""),
                 "type_verkoper": "", "grijs": grijs_kenteken(tekst, url, titel), "marge": "marge" in tekst.lower(),
                 "export": bool(EXPORT_RE.search(tekst)), "geplaatst": l.get("date", ""),
+                "gereserveerd": bool(l.get("reserved")) or bool(re.search(r"\b(gereserveerd|reserved|verkocht|sold)\b", titel, re.I)),
                 "foto": ("https:" + l["imageUrls"][0]) if l.get("imageUrls") else "",
                 "url": url, "tekst": re.sub(r"\s+", " ", l.get("description", ""))[:240],
             })
@@ -549,11 +550,29 @@ def main():
         if a.get("kenteken") in rdw:
             pas_rdw_toe(a, rdw[a["kenteken"]])
         o = oud.get(a["id"])
-        a["online"], a["gemist"], a["laatst_gezien"], a["offline_sinds"] = True, 0, nu, None
+        res = bool(a.get("gereserveerd"))
+        was_res = bool(o and not o.get("online", True) and o.get("offline_reden") == "gereserveerd")
+        a["gemist"], a["laatst_gezien"] = 0, nu
         a["eerst_gezien"] = o["eerst_gezien"] if o else nu
         a["gebeurtenissen"] = list(o.get("gebeurtenissen") or [{"d": o["eerst_gezien"], "t": "online"}]) if o else [{"d": nu, "t": "online"}]
-        if o and not o.get("online", True):
-            a["gebeurtenissen"].append({"d": nu, "t": "weer online"})
+        for k in ("terug_op", "terug_prijs_van"):
+            if o and o.get(k):
+                a[k] = o[k]
+        if res:                         # gereserveerd/verkocht-label: tel als offline, maar blijf volgen
+            a["online"], a["offline_reden"] = False, "gereserveerd"
+            a["offline_sinds"] = o["offline_sinds"] if was_res and o.get("offline_sinds") else nu
+            a["prijs_bij_reservering"] = o.get("prijs_bij_reservering", o["prijs"]) if was_res else a["prijs"]
+            if not was_res:
+                a["gebeurtenissen"].append({"d": nu, "t": "gereserveerd (als offline beschouwd)"})
+        else:
+            a["online"], a["offline_sinds"] = True, None
+            if o and not o.get("online", True):
+                if was_res:
+                    a["terug_op"] = nu
+                    a["terug_prijs_van"] = o.get("prijs_bij_reservering", o["prijs"])
+                    a["gebeurtenissen"].append({"d": nu, "t": "weer beschikbaar (was gereserveerd)"})
+                else:
+                    a["gebeurtenissen"].append({"d": nu, "t": "weer online"})
         ph = list(o.get("prijshistorie", [])) if o else []
         if not ph and o:
             ph = [{"d": o["eerst_gezien"], "p": o["prijs"], "t": o.get("prijstype", "")}]

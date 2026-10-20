@@ -46,6 +46,9 @@ a.ook{font-size:12px;color:var(--accent)}
 .auto.dis{opacity:.55}.auto.lk{border-color:var(--goed)}.auto.off .foto{filter:grayscale(1)}
 .ov{overflow-x:auto;margin-bottom:12px;background:var(--kaart);border:1px solid var(--rand);border-radius:10px;padding:8px 12px}.ov table{border-collapse:collapse;width:100%;font-size:12px}.ov th,.ov td{text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid var(--rand);white-space:nowrap}
 .spark{vertical-align:middle}
+.prijsknop{background:none;border:0;border-bottom:1px dashed var(--accent);color:inherit;font:inherit;font-weight:700;cursor:pointer;padding:0}.pijl{font-size:13px}
+.prijs .spark{display:block;margin:3px 0 0 auto;color:var(--zacht)}
+.pov{border-top:1px solid var(--rand);padding:10px 12px;font-size:13px}.pov h4{margin:0 0 6px}.pov table{width:100%;border-collapse:collapse;margin-top:6px}.pov th{text-align:left;color:var(--zacht);font-weight:400}.pov td,.pov th{padding:3px 8px 3px 0;border-bottom:1px solid var(--rand);vertical-align:top}
 .plek{margin:3px 0 2px;font-size:14px;color:var(--tekst)}.plek b{color:var(--accent)}
 .brst{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1}.chip{flex-direction:row;align-items:center;gap:5px;border:1px solid var(--rand);border-radius:99px;padding:4px 10px;font-size:13px;color:var(--tekst);cursor:pointer;background:var(--bg)}.chip:has(input:checked){border-color:var(--accent);background:rgba(216,196,142,.15)}.chip small{color:var(--zacht)}
 .aanvul{background:var(--kaart);border:1px solid var(--let);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px}
@@ -185,9 +188,9 @@ function apkMnd(apk){ if(!apk) return null; return Math.floor((new Date(apk)-Dat
 function tr(k,v){return v||v===0?`<tr><td>${k}</td><td>${esc(v)}</td></tr>`:""}
 
 function dagenTussen(a,b){return Math.max(0,Math.round((new Date(b)-new Date(a))/864e5))}
-function spark(ph){
+function spark(ph,w=120,hh=28){
   if(ph.length<2) return "";
-  const w=120,hh=28,p=ph.map(x=>x.p), mn=Math.min(...p), mx=Math.max(...p), t0=new Date(ph[0].d).getTime(), t1=Math.max(Date.now(),new Date(ph[ph.length-1].d).getTime());
+  const p=ph.map(x=>x.p), mn=Math.min(...p), mx=Math.max(...p), t0=new Date(ph[0].d).getTime(), t1=Math.max(Date.now(),new Date(ph[ph.length-1].d).getTime());
   const X=d=>(new Date(d).getTime()-t0)/Math.max(1,t1-t0)*(w-4)+2, Y=v=>mx===mn?hh/2:hh-3-(v-mn)/(mx-mn)*(hh-6);
   let pts="";ph.forEach((x,i)=>{pts+=(i?"L":"M")+X(x.d).toFixed(1)+" "+(i?Y(ph[i-1].p):Y(x.p)).toFixed(1)+" L"+X(x.d).toFixed(1)+" "+Y(x.p).toFixed(1)+" "});
   pts+="L"+(w-2)+" "+Y(p[p.length-1]).toFixed(1);
@@ -204,6 +207,20 @@ function historie(a){
   else p+="<table>"+ph.map((x,i)=>{const v=i?x.p-ph[i-1].p:0;return `<tr><td>${dtt(x.d)}</td><td>${x.p<100?"?":euro(x.p)} <span class="meta">${esc(x.t)}</span> ${i?`<b style="color:var(--${v<0?"goed":"slecht"})">${v<0?"▼":"▲"} ${euro(Math.abs(v))}</b>`:"<span class='meta'>start</span>"}</td></tr>`}).reverse().join("")+"</table>";
   return `<div><h4>Looptijd op de markt</h4>${t}${p}</div>`;
 }
+function pijl(a){const ph=a.prijshistorie||[];if(ph.length<2)return "";const v=ph[ph.length-1].p-ph[ph.length-2].p,tot=ph[ph.length-1].p-ph[0].p;if(!v&&!tot)return "";
+  const x=v||tot;return ` <span class="pijl" style="color:var(--${x<0?"goed":"slecht"})" title="laatste wijziging ${euro(Math.abs(x))}${ph.length>2?", totaal sinds begin "+(tot<0?"-":"+")+euro(Math.abs(tot)):""}">${x<0?"▼":"▲"}${euro(Math.abs(x))}</span>`}
+function prijsoverzicht(a){
+  const ph=a.prijshistorie||[],rij=[];
+  ph.forEach((x,i)=>{const tot=i<ph.length-1?ph[i+1].d:(a.online===false?a.offline_sinds:null),v=i?x.p-ph[i-1].p:0;
+    rij.push({d:x.d,ic:"💶",t:i?"Nieuwe prijs":"Eerste prijs",b:x.p<100?"?":euro(x.p),x:(i?`<b style="color:var(--${v<0?"goed":"slecht"})">${v<0?"▼":"▲"} ${euro(Math.abs(v))}</b> `:"")+`<span class="meta">${esc(x.t||"")} · ${tot?"tot "+dtt(tot)+" ("+dagenTussen(x.d,tot)+" d)":"geldt nu ("+dagenTussen(x.d,new Date().toISOString())+" d)"}</span>`})});
+  (a.biedingen||[]).forEach(b=>rij.push({d:b.datum,ic:"🔨",t:"Bod"+(b.naam?" van "+esc(b.naam):""),b:euro(b.bedrag),x:""}));
+  (a.gebeurtenissen||[]).forEach(e=>{if(e.t==="online"&&e.d===a.eerst_gezien)return;rij.push({d:e.d,ic:/gereserveerd \(/.test(e.t)?"🔒":/weer/.test(e.t)?"↩":e.t==="offline"?"⛔":"•",t:esc(e.t),b:"",x:""})});
+  rij.push({d:a.eerst_gezien,ic:"👀",t:"Voor het eerst gezien door de zoeker",b:"",x:""});
+  if(a.geplaatst_op)rij.push({d:a.geplaatst_op,ic:"📅",t:"Advertentie geplaatst",b:"",x:""});
+  rij.sort((p,q)=>new Date(q.d)-new Date(p.d));
+  const bod=a.biedingen_aantal?`<p class="meta">Marktplaats meldt ${a.biedingen_aantal} bieding${a.biedingen_aantal==1?"":"en"}${(a.biedingen||[]).length<a.biedingen_aantal?" (hier staan alleen de laatste "+(a.biedingen||[]).length+")":""}.</p>`:(a.biedingen_actief?'<p class="meta">Bieden is mogelijk; nog geen bod gedaan.</p>':"");
+  return `<div class="pov"><h4>Prijzen en biedingen — ${esc(a.titel).slice(0,60)}</h4><div style="color:var(--accent)">${spark(ph,260,48)}</div>${bod}
+  <table><tr><th>Wanneer</th><th></th><th>Wat</th><th>Bedrag</th><th>Toelichting</th></tr>${rij.map(r=>`<tr><td>${dtt(r.d)}</td><td>${r.ic}</td><td>${r.t}</td><td><b>${r.b}</b></td><td>${r.x}</td></tr>`).join("")}</table></div>`}
 function prijsVerandering(a){const ph=a.prijshistorie||[];if(ph.length<2)return null;const eerste=ph[0].p,nu=ph[ph.length-1].p;return {van:eerste,naar:nu,delta:nu-eerste,laatst:ph[ph.length-1].d}}
 function overzicht(l){
   if(!$("liked").checked){$("overzicht").innerHTML="";return}
@@ -307,7 +324,9 @@ function render(){
     else if(a.btw==="excl") badges.push(`<span class="b slecht" title="Prijs is exclusief BTW; als particulier komt er 21% bij">prijs excl. BTW${$("btwbij").checked?" → "+euro(a.prijs)+" incl.":""}</span>`);
     else if(a.btw==="aftrekbaar") badges.push('<span class="b let" title="BTW-auto: BTW aftrekbaar voor ondernemers">BTW-auto</span>');
     else if(a.btw==="incl") badges.push('<span class="b goed">prijs incl. BTW</span>');
-    if(a.online===false) badges.unshift(`<span class="b slecht">OFFLINE sinds ${dt(a.offline_sinds)} (${dagenTussen(a.eerst_gezien,a.offline_sinds)} d online)</span>`);
+    if(a.terug_op&&a.online!==false){const v=a.terug_prijs_van,verschil=v!=null&&v!==a._p0;badges.unshift(`<span class="b ${verschil?"nw":"goed"}" title="Was gereserveerd en is weer te koop">↩ weer beschikbaar sinds ${dt(a.terug_op)}${verschil?" — prijs was "+euro(v)+", nu "+euro(a._p0)+(a._p0<v?" ▼":" ▲"):" — zelfde prijs"}</span>`)}
+    if(a.online===false&&a.offline_reden==="gereserveerd") badges.unshift(`<span class="b slecht">🔒 GERESERVEERD sinds ${dt(a.offline_sinds)} — telt als offline</span>`);
+    else if(a.online===false) badges.unshift(`<span class="b slecht">OFFLINE sinds ${dt(a.offline_sinds)} (${dagenTussen(a.eerst_gezien,a.offline_sinds)} d online)</span>`);
     const pv=prijsVerandering(a); if(pv&&pv.delta!==0) badges.push(`<span class="b ${pv.delta<0?"goed":"let"}">${pv.delta<0?"▼":"▲"} ${euro(Math.abs(pv.delta))} sinds ${dt(pv.laatst)} (was ${euro(pv.van)})</span>`);
     if(a.prijs_twijfel) badges.push('<span class="b let">prijs onduidelijk</span>');
     if(a.type_verkoper) badges.push(`<span class="b">${a.type_verkoper}</span>`);
@@ -321,10 +340,14 @@ function render(){
         ${plekregel(a)}<div class="badges">${badges.join("")}</div>${bod}
         <div class="stem"><button class="${sv==="like"?"on":""}" data-v="like" data-k="${esc(a.id)}">👍</button><button class="${sv==="dislike"?"on":""}" data-v="dislike" data-k="${esc(a.id)}">👎</button>${vr.r?`<span class="reden">“${esc(vr.r)}”</span>`:""}</div>
         ${a.tekst?`<div class="tekst">${esc(a.tekst)}</div>`:""}${ook?`<div class="tekst">${ook}</div>`:""}</div>
-      <div class="prijs ${a._boven>0?"boven":""}">${a.prijs<100?"?":euro(a.prijs)}<small>${esc(a.prijstype)}${a.btw==="excl"&&$("btwbij").checked?" · incl. BTW (€ "+a._p0.toLocaleString("nl-NL")+" excl.)":""}</small></div></div>
+      <div class="prijs ${a._boven>0?"boven":""}"><button class="prijsknop" data-p="${esc(a.id)}" title="Klik voor alle prijzen en biedingen">${a.prijs<100?"?":euro(a.prijs)}${pijl(a)}</button>${spark(a.prijshistorie||[],70,18)}<small>${esc(a.prijstype)}${a.btw==="excl"&&$("btwbij").checked?" · incl. BTW (€ "+a._p0.toLocaleString("nl-NL")+" excl.)":""}</small></div></div>
       <button class="knop" data-i="${esc(a.id)}">Details: looptijd &amp; prijsverloop, RDW, APK-gebreken${a.biedingen_aantal?", biedingen":""} ▾</button></div>`}).join("")||'<p class="meta">Niets gevonden met deze filters.</p>';
   overzicht(l);
   document.querySelectorAll(".stem button").forEach(b=>b.onclick=()=>zet(data.auto.find(x=>x.id===b.dataset.k),b.dataset.v));
+  document.querySelectorAll(".prijsknop").forEach(b=>b.onclick=()=>{
+    const kaart=b.closest(".auto"),bestaand=kaart.querySelector(".pov");
+    if(bestaand){bestaand.remove();return}
+    kaart.insertAdjacentHTML("beforeend",prijsoverzicht(data.auto.find(x=>x.id===b.dataset.p)))});
   document.querySelectorAll(".knop").forEach(b=>b.onclick=()=>{
     const open=b.nextElementSibling&&b.nextElementSibling.classList.contains("det");
     if(open){b.nextElementSibling.remove();b.textContent=b.textContent.replace("▴","▾");return;}
