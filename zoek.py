@@ -111,6 +111,12 @@ def versnelling(s):
     return ""
 
 
+def bakken(s):
+    """Aantal versnellingen uit tekst ('6 versnellingen', '5-bak', '6 speed'); 1 (= traploos) telt niet."""
+    m = re.search(r"\b([2-9])\s*[- ]?(?:versnelling|bak\b|speed|gears?)", (s or "").lower())
+    return int(m.group(1)) if m else 0
+
+
 def heeft_trekhaak(tekst):
     t = (tekst or "").lower()
     return "trekhaak" in t and not re.search(r"(geen|zonder) trekhaak", t)
@@ -225,7 +231,9 @@ def mp_detail(a, oud):
         a["btw"] = o["btw"]
     if o.get("versnelling"):
         a["versnelling"] = o["versnelling"]
-    if a.get("kenteken") and a.get("geplaatst_op") and "btw" in a and (a.get("versnelling") or o.get("vs_gezocht")) and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
+    if o.get("bakken"):
+        a["bakken"] = o["bakken"]
+    if a.get("kenteken") and a.get("geplaatst_op") and "btw" in a and o.get("vs_gezocht") and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
         return
     time.sleep(0.6)
     h = haal(a["url"], tries=3)
@@ -236,11 +244,14 @@ def mp_detail(a, oud):
         if o.get("prijstype") == "hoogste bod" and a["prijs"] < 100:
             a["prijs"], a["prijstype"], a["prijs_twijfel"] = o["prijs"], "hoogste bod", False
         return
+    mt = re.search(r'"key":"transmission","label":"[^"]*","value":"([^"]+)"', h) or re.search(r'"vehicleTransmission":"([^"]+)"', h) \
+        or re.search(r"Transmissie: <strong>([^<]+)</strong>", h)
+    ts = mt.group(1) if mt else ""
     if not a.get("versnelling"):
-        mt = re.search(r'"key":"transmission","label":"[^"]*","value":"([^"]+)"', h) or re.search(r'"vehicleTransmission":"([^"]+)"', h) \
-            or re.search(r"Transmissie: <strong>([^<]+)</strong>", h)
-        a["versnelling"] = versnelling(mt.group(1) if mt else "") or versnelling(a.get("titel", "") + " " + a.get("tekst", ""))
-        a["vs_gezocht"] = True
+        a["versnelling"] = versnelling(ts) or versnelling(a.get("titel", "") + " " + a.get("tekst", ""))
+    if not a.get("bakken"):
+        a["bakken"] = bakken(ts) or bakken(a.get("titel", "") + " " + a.get("tekst", ""))
+    a["vs_gezocht"] = True
     mb = re.search(r"<strong>BTW/Marge</strong>: ?([^<]+)", h)
     a["btw"] = btw_status(mb.group(1) if mb else "", a.get("titel", "") + " " + a.get("tekst", ""))
     if a["btw"] == "marge":
@@ -328,8 +339,8 @@ def as_zoek(model, mk, md, elek):
 def as_detail(a, oud):
     """Detailpagina: omschrijving, carrosserietype, kenteken (verzekeringsoptie) en trekhaak."""
     o = oud.get(a["id"])
-    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op") and "btw" in o and "versnelling" in o:
-        for k in ("versnelling", "btw", "apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
+    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op") and "btw" in o and o.get("vs_gezocht"):
+        for k in ("versnelling", "bakken", "vs_gezocht", "btw", "apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
             if k in o:
                 a[k] = o[k]
         a["verrijkt"] = True
@@ -350,6 +361,9 @@ def as_detail(a, oud):
         mm = re.search(r'"bodyType": ?\{"formatted": ?"([^"]+)"', s)
         bt = mm.group(1) if mm else ""
     a["carrosserie"] = bt
+    mgr = re.search(r'"numberOfGears": ?(\d+)', m.group(1)) or re.search(r'"gears": ?(\d+)', m.group(1))
+    a["bakken"] = int(mgr.group(1)) if mgr and 2 <= int(mgr.group(1)) <= 9 else bakken(desc + " " + a["titel"])
+    a["vs_gezocht"] = True
     if not a.get("versnelling"):
         a["versnelling"] = versnelling(str(veh.get("transmission") or "") + " " + desc + " " + a["titel"])
     mv = re.search(r'"vatLabel": ?"([^"]*)"', m.group(1))

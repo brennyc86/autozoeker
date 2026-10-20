@@ -21,6 +21,7 @@ select,input[type=search],input[type=number]{padding:7px;border:1px solid var(--
 .lijst{display:grid;gap:10px}
 .auto{display:grid;grid-template-columns:120px 1fr auto;gap:12px;background:var(--kaart);border:1px solid var(--rand);border-radius:10px;padding:10px;text-decoration:none;color:inherit}
 .auto:hover{border-color:var(--accent)}
+.fotokol{display:flex;flex-direction:column;gap:4px;align-items:stretch}.bak{font-size:.78rem;font-weight:700;text-align:center;border-radius:5px;padding:2px 4px;background:var(--rand);color:var(--tekst,inherit)}.bak.automaat{background:var(--goed);color:#10261a}.bak.onb{font-weight:400;opacity:.6}
 .foto{width:120px;height:90px;object-fit:cover;border-radius:6px;background:var(--rand)}
 .titel{font-weight:600;margin-bottom:3px}
 .meta{color:var(--zacht);font-size:13px}
@@ -272,6 +273,8 @@ function zetPrijzen(){const bij=$("btwbij").checked;
 function btwOK(a){const f=$("btwf").value;if(!f)return true;
   if(f==="geenexcl")return a.btw!=="excl";if(f==="marge")return a.btw==="marge"||(a.marge&&!a.btw);
   if(f==="btw")return a.btw==="excl"||a.btw==="aftrekbaar";if(f==="particulier")return a.btw!=="excl"&&a.btw!=="aftrekbaar";return true}
+function bakTekst(a){const v=a.versnelling;if(!v)return '<div class="bak onb">bak onbekend</div>';
+  const n=a.bakken?a.bakken+"-bak ":"";return `<div class="bak ${v}">${v==="automaat"?"⚙ "+n+"automaat":"🕹 "+n+"handgeschakeld"}</div>`}
 function vsOK(a){const f=$("vsf").value;if(!f)return true;const v=a.versnelling||"";
   if(f==="geenhand")return v!=="handgeschakeld";return v===f}
 function basisOK(a,mp){ // alle filters behalve de prijs
@@ -314,7 +317,6 @@ function render(){
     if(a._boven>0) badges.unshift(`<span class="b let">+ ${euro(a._boven)} boven je maximum</span>`);
     if(a.apk) badges.push(`<span class="b ${m<0?"slecht":m<4?"let":"goed"}">APK ${dt(a.apk)}${m<0?" (verlopen)":""}${a.apk_bron==="RDW"?" ✓":""}</span>`);
     else badges.push('<span class="b let">APK onbekend (vaak verlopen)</span>');
-    if(a.versnelling) badges.push(`<span class="b ${a.versnelling==="automaat"?"goed":""}">${a.versnelling==="automaat"?"⚙ automaat":"handbak"}</span>`);
     if(a.trekhaak) badges.push('<span class="b goed">trekhaak</span>');
     if(a.rdw){ badges.push(`<span class="b goed">${esc(a.kenteken)}</span>`);
       if(a.rdw.verzekerd==="Nee") badges.push('<span class="b">niet verzekerd</span>');
@@ -339,7 +341,7 @@ function render(){
     const bod=a.hoogste_bod?`<div class="bod">🔨 Hoogste bod <b>${euro(a.hoogste_bod.bedrag)}</b> · geplaatst ${dtt(a.hoogste_bod.datum)} · ${a.biedingen_aantal} bieding${a.biedingen_aantal==1?"":"en"}</div>`:(a.biedingen_actief?'<div class="bod">🔨 Biedingen mogelijk — nog geen bod</div>':"");
     const sv=stem(a), vr=votes[vkey(a)]||{};
     return `<div class="auto ${a._boven>0?"boven":""} ${sv==="dislike"?"dis":""} ${sv==="like"?"lk":""} ${a.online===false?"off":""}"><div class="rij">
-      <img class="foto" loading="lazy" src="${esc(a.foto)}" alt="" onerror="this.style.visibility='hidden'">
+      <div class="fotokol"><img class="foto" loading="lazy" src="${esc(a.foto)}" alt="" onerror="this.style.visibility='hidden'">${bakTekst(a)}</div>
       <div><div class="titel"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.titel)}</a></div>
         <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.rdw&&a.rdw.brandstof||a.brandstof)} · ${esc(a.bron)}</div>
         ${plekregel(a)}<div class="badges">${badges.join("")}</div>${bod}
