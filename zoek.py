@@ -167,7 +167,9 @@ def mp_detail(a, oud):
     o = oud.get(a["id"]) or {}
     if o.get("kenteken"):
         a["kenteken"] = o["kenteken"]
-    if a.get("kenteken") and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
+    if o.get("geplaatst_op"):
+        a["geplaatst_op"] = o["geplaatst_op"]
+    if a.get("kenteken") and a.get("geplaatst_op") and a["prijstype"] != "bieden" and not o.get("biedingen_actief"):
         return
     time.sleep(0.6)
     h = haal(a["url"], tries=3)
@@ -178,6 +180,9 @@ def mp_detail(a, oud):
         if o.get("prijstype") == "hoogste bod" and a["prijs"] < 100:
             a["prijs"], a["prijstype"], a["prijs_twijfel"] = o["prijs"], "hoogste bod", False
         return
+    ms = re.search(r'"since":"(\d{4}-\d\d-\d\dT[^"]+)"', h)
+    if ms:
+        a["geplaatst_op"] = ms.group(1)       # eerste plaatsing (de lijstdatum verspringt bij opwaarderen)
     m = re.search(r'"licensePlate":"([^"]+)"', h)
     if m and schoon_kenteken(m.group(1)):
         a["kenteken"] = schoon_kenteken(m.group(1))
@@ -257,8 +262,8 @@ def as_zoek(model, mk, md, elek):
 def as_detail(a, oud):
     """Detailpagina: omschrijving, carrosserietype, kenteken (verzekeringsoptie) en trekhaak."""
     o = oud.get(a["id"])
-    if o and o.get("verrijkt") and "kenteken" in o:
-        for k in ("apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak"):
+    if o and o.get("verrijkt") and "kenteken" in o and o.get("geplaatst_op"):
+        for k in ("apk", "apk_bron", "tekst", "grijs", "marge", "export", "carrosserie", "kenteken", "trekhaak", "geplaatst_op"):
             if k in o:
                 a[k] = o[k]
         a["verrijkt"] = True
@@ -279,6 +284,9 @@ def as_detail(a, oud):
         mm = re.search(r'"bodyType": ?\{"formatted": ?"([^"]+)"', s)
         bt = mm.group(1) if mm else ""
     a["carrosserie"] = bt
+    mg = re.search(r'"createdTimestampWithOffset": ?"([^"]+)"', s)
+    if mg:
+        a["geplaatst_op"] = mg.group(1)
     a["kenteken"] = schoon_kenteken(veh.get("licensePlate") or (det.get("identifier") or {}).get("licensePlate"))
     a["apk"] = apk_uit_tekst(desc)
     a["apk_bron"] = "tekst" if a["apk"] else ""

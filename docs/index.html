@@ -46,6 +46,7 @@ a.ook{font-size:12px;color:var(--accent)}
 .auto.dis{opacity:.55}.auto.lk{border-color:var(--goed)}.auto.off .foto{filter:grayscale(1)}
 .ov{overflow-x:auto;margin-bottom:12px;background:var(--kaart);border:1px solid var(--rand);border-radius:10px;padding:8px 12px}.ov table{border-collapse:collapse;width:100%;font-size:12px}.ov th,.ov td{text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid var(--rand);white-space:nowrap}
 .spark{vertical-align:middle}
+.plek{margin:3px 0 2px;font-size:14px;color:var(--tekst)}.plek b{color:var(--accent)}
 .brst{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1}.chip{flex-direction:row;align-items:center;gap:5px;border:1px solid var(--rand);border-radius:99px;padding:4px 10px;font-size:13px;color:var(--tekst);cursor:pointer;background:var(--bg)}.chip:has(input:checked){border-color:var(--accent);background:rgba(216,196,142,.15)}.chip small{color:var(--zacht)}
 .aanvul{background:var(--kaart);border:1px solid var(--let);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px}
 .auto.boven{border-left:4px solid var(--let)}.prijs.boven{color:var(--let)}
@@ -75,7 +76,7 @@ nav.tabs{display:flex;gap:6px;margin:10px 0}nav.tabs button{border:1px solid var
     <label>APK minimaal nog geldig<select id="apkmin"><option value="">maakt niet uit</option><option value="0">niet verlopen</option><option value="3">≥ 3 maanden</option><option value="6">≥ 6 maanden</option><option value="9">≥ 9 maanden</option><option value="10">≥ 10 maanden</option><option value="11">≥ 11 maanden</option><option value="12">≥ 12 maanden</option></select></label>
     <label>Max. afstand vanaf <span id="thuisnaam">thuis</span> (km, hemelsbreed)<input type="number" id="maxafst" placeholder="geen limiet" step="25"></label>
     <label>Max. km<input type="number" id="maxkm" placeholder="geen limiet" step="10000"></label>
-    <label>Sorteer<select id="sort"><option value="prijs">Prijs (laag → hoog)</option><option value="km">Kilometers (laag → hoog)</option><option value="jaar">Bouwjaar (nieuw → oud)</option><option value="nieuw">Nieuwst gevonden</option><option value="afstand">Afstand (dichtbij → ver)</option><option value="apk">APK (langst geldig)</option><option value="bod">Hoogste bod (hoog → laag)</option></select></label>
+    <label>Sorteer<select id="sort"><option value="prijs">Prijs (laag → hoog)</option><option value="km">Kilometers (laag → hoog)</option><option value="jaar">Bouwjaar (nieuw → oud)</option><option value="geplaatst">Nieuwst geplaatst (advertentiedatum)</option><option value="geplaatstoud">Langst geplaatst (oudste eerst)</option><option value="nieuw">Nieuwst gevonden door zoeker</option><option value="afstand">Afstand (dichtbij → ver)</option><option value="apk">APK (langst geldig)</option><option value="bod">Hoogste bod (hoog → laag)</option></select></label>
     <div>
       <label class="vink"><input type="checkbox" id="liked"> 👍 alleen gelikete auto's</label>
       <label class="vink"><input type="checkbox" id="disl"> 👎 toon ook gedislikete</label>
@@ -236,6 +237,13 @@ function detail(a){
   return `<div class="det">${historie(a)}<div><h4>RDW-gegevens</h4>${rd}</div>${tech}${bod}</div>`;
 }
 let tab="lijst";
+const plaatsTs=a=>new Date(a.geplaatst_op||a.eerst_gezien||0).getTime();
+function leeftijd(iso){const d=Math.floor((Date.now()-new Date(iso))/864e5);return d<=0?"vandaag":d===1?"gisteren":d<14?d+" dagen geleden":d<60?Math.round(d/7)+" weken geleden":d<700?Math.round(d/30.4)+" maanden geleden":Math.round(d/365)+" jaar geleden"}
+function plekregel(a){
+  const thuis=data.thuis||"thuis";
+  const wanneer=a.geplaatst_op?`📅 Geplaatst <b>${dt(a.geplaatst_op)}</b> <span class="meta">(${leeftijd(a.geplaatst_op)})</span>`:`📅 Voor het eerst gezien <b>${dt(a.eerst_gezien)}</b> <span class="meta">(plaatsdatum onbekend${a.geplaatst?", lijst zegt: "+esc(a.geplaatst):""})</span>`;
+  const waar=`📍 <b>${esc(a.plaats||"plaats onbekend")}</b> — ${a.afstand_km!==undefined?`<b>${a.afstand_km} km</b> van ${esc(thuis)}`:`afstand tot ${esc(thuis)} onbekend`}`;
+  return `<div class="plek">${wanneer} &nbsp;·&nbsp; ${waar}</div>`}
 function basisOK(a,mp){ // alle filters behalve de prijs
   const q=$("q").value.toLowerCase(), mo=$("model").value, br=$("bron").value, am=$("apkmin").value, ma=+$("maxafst").value||1e9, mk=+$("maxkm").value||1e9;
   const m=apkMnd(a.apk), sv=stem(a);
@@ -267,7 +275,7 @@ function render(){
     }
   }
   $("aanvultekst").innerHTML=aanv;
-  l.sort((a,b)=>so==="prijs"?a.prijs-b.prijs:so==="km"?a.km-b.km:so==="afstand"?(a.afstand_km??9e9)-(b.afstand_km??9e9):so==="jaar"?b.jaar-a.jaar:so==="apk"?(b.apk||"").localeCompare(a.apk||""):so==="bod"?((b.hoogste_bod||{}).bedrag||0)-((a.hoogste_bod||{}).bedrag||0):(b.eerst_gezien>a.eerst_gezien?1:-1));
+  l.sort((a,b)=>so==="prijs"?a.prijs-b.prijs:so==="km"?a.km-b.km:so==="afstand"?(a.afstand_km??9e9)-(b.afstand_km??9e9):so==="jaar"?b.jaar-a.jaar:so==="geplaatst"?plaatsTs(b)-plaatsTs(a):so==="geplaatstoud"?plaatsTs(a)-plaatsTs(b):so==="apk"?(b.apk||"").localeCompare(a.apk||""):so==="bod"?((b.hoogste_bod||{}).bedrag||0)-((a.hoogste_bod||{}).bedrag||0):(b.eerst_gezien>a.eerst_gezien?1:-1));
   $("tel").textContent=l.length+" auto's gevonden";
   $("lijst").innerHTML=l.map(a=>{
     const m=apkMnd(a.apk), badges=[], dagen=(nu-new Date(a.eerst_gezien))/864e5;
@@ -296,8 +304,8 @@ function render(){
     return `<div class="auto ${a._boven>0?"boven":""} ${sv==="dislike"?"dis":""} ${sv==="like"?"lk":""} ${a.online===false?"off":""}"><div class="rij">
       <img class="foto" loading="lazy" src="${esc(a.foto)}" alt="" onerror="this.style.visibility='hidden'">
       <div><div class="titel"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.titel)}</a></div>
-        <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.rdw&&a.rdw.brandstof||a.brandstof)} · ${esc(a.plaats)}${a.afstand_km!==undefined?" ("+a.afstand_km+" km)":""} · ${esc(a.bron)}</div>
-        <div class="badges">${badges.join("")}</div>${bod}
+        <div class="meta">${a.jaar||"?"} · ${a.km?a.km.toLocaleString("nl-NL")+" km":"km onbekend"} · ${esc(a.rdw&&a.rdw.brandstof||a.brandstof)} · ${esc(a.bron)}</div>
+        ${plekregel(a)}<div class="badges">${badges.join("")}</div>${bod}
         <div class="stem"><button class="${sv==="like"?"on":""}" data-v="like" data-k="${esc(a.id)}">👍</button><button class="${sv==="dislike"?"on":""}" data-v="dislike" data-k="${esc(a.id)}">👎</button>${vr.r?`<span class="reden">“${esc(vr.r)}”</span>`:""}</div>
         ${a.tekst?`<div class="tekst">${esc(a.tekst)}</div>`:""}${ook?`<div class="tekst">${ook}</div>`:""}</div>
       <div class="prijs ${a._boven>0?"boven":""}">${a.prijs<100?"?":euro(a.prijs)}<small>${esc(a.prijstype)}</small></div></div>
